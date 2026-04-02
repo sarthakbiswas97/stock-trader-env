@@ -1,0 +1,21 @@
+[project]
+name = "stock-trader-env"
+version = "1.0.0"
+description = "Realistic stock trading RL environment using OpenEnv"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core",
+    "fastapi",
+    "uvicorn[standard]",
+    "pandas",
+    "numpy",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+inference = [
+    "openai",
+]
+
+[project.scripts]
+server = "server.app:main"

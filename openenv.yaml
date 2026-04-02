@@ -1,0 +1,13 @@
+name: stock-trader-env
+description: "Realistic stock trading environment for training AI agents on Indian equity markets (NIFTY). Features technical indicators, regime-based risk management, and multi-difficulty tasks."
+version: "1.0.0"
+author: sarthakbiswas
+tags:
+  - finance
+  - trading
+  - stocks
+  - reinforcement-learning
+  - real-world
+environment:
+  class: server.environment:StockTradingEnvironment
+  server: server.app:app
