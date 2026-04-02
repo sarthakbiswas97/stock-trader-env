@@ -185,13 +185,15 @@ Real historical daily OHLCV data for 10 NIFTY stocks stored in `data/ohlcv/`. Ea
 
 ## Baseline Scores
 
-*Scores produced with seed=42 using the baseline inference script.*
+*Scores produced with seed=42 using the baseline inference script (HOLD-only fallback agent).*
 
-| Task | Score | Final Value |
-|------|-------|-------------|
-| `single_stock` | TBD | TBD |
-| `portfolio` | TBD | TBD |
-| `full_autonomous` | TBD | TBD |
+| Task | Score | Steps |
+|------|-------|-------|
+| `single_stock` | 0.300 | 20 |
+| `portfolio` | 0.475 | 30 |
+| `full_autonomous` | 0.567 | 40 |
+
+*Note: These are baseline scores from a HOLD-only agent. An LLM agent with active trading strategy will score higher. During evaluation, the hackathon's standard agent (e.g., Nemotron 3 Super) will be run against the environment.*
 
 ## Project Structure
 
