@@ -189,9 +189,9 @@ Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 10
 
 | Task | Score | Steps | Agent Behavior |
 |------|-------|-------|----------------|
-| `single_stock` | 0.212 | 20 | Conservative — bought/sold RELIANCE once, mostly held |
-| `portfolio` | 0.710 | 30 | Active — traded across HDFCBANK, INFY, SBIN, RELIANCE with good diversification |
-| `full_autonomous` | 0.468 | 40 | Mixed — diversified trades but some regime violations and sell penalties |
+| `single_stock` | 0.600 | 20 | Two buy-sell cycles on RELIANCE, captured upside on second entry |
+| `portfolio` | 0.376 | 30 | Traded across 6 of 10 stocks, struggled with position sizing across larger universe |
+| `full_autonomous` | 0.667 | 40 | Good diversification across 8 of 25 stocks with fractional sizing, some regime penalties |
 
 ## Project Structure
 
