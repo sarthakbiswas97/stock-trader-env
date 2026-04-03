@@ -1,10 +1,24 @@
+---
+title: Stock Trading RL Environment
+emoji: 📈
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+tags:
+  - openenv
+  - reinforcement-learning
+  - finance
+  - trading
+---
+
 # Stock Trading RL Environment
 
 A real-world OpenEnv environment that simulates daily stock trading on Indian equity markets (NIFTY stocks) using real historical OHLCV data. LLM agents connect via HTTP/WebSocket, receive market observations with technical indicators, and respond with trade actions.
 
 ## Why This Environment?
 
-Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 10 major Indian stocks spanning years of market history.
+Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 68 NIFTY stocks (NIFTY 50 + select NIFTY 100) spanning ~5 years of market history.
 
 Unlike toy environments, agents must deal with:
 - **Transaction costs and slippage** that eat into returns
@@ -132,7 +146,7 @@ HF_TOKEN=your-key-here python inference.py
 
 ```bash
 docker build -t stock-trader-env .
-docker run -p 8000:8000 stock-trader-env
+docker run -p 7860:7860 stock-trader-env
 ```
 
 ### Environment Variables
@@ -142,18 +156,18 @@ docker run -p 8000:8000 stock-trader-env
 | `HF_TOKEN` / `API_KEY` | API key for the LLM endpoint | (required) |
 | `API_BASE_URL` | LLM API endpoint | `https://router.huggingface.co/v1` |
 | `MODEL_NAME` | Model identifier | `Qwen/Qwen2.5-72B-Instruct` |
-| `ENV_URL` | Environment server URL | `http://localhost:8000` |
+| `IMAGE_NAME` | Docker image name for the environment | (set by evaluator) |
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/reset?task_id=single_stock&seed=42` | Start new episode |
-| `POST` | `/step?session_id=...&action=BUY` | Take an action |
-| `GET` | `/state?session_id=...` | Get episode metadata |
-| `GET` | `/tasks` | List available tasks |
-| `WebSocket` | `/ws` | Persistent session (reset/step/state via JSON) |
+| `POST` | `/reset` | Start new episode (JSON body: `{"task_id": "single_stock", "seed": 42}`) |
+| `POST` | `/step` | Take an action (JSON body: `{"action": {"action": "BUY RELIANCE"}}`) |
+| `GET` | `/state` | Get episode metadata |
+| `GET` | `/schema` | Action/observation JSON schemas |
+| `WebSocket` | `/ws` | Persistent session (recommended for agents) |
 
 ## Reward Design
 
@@ -184,14 +198,14 @@ Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 10
 ```
 stock-trader-env/
 ├── server/
-│   ├── app.py              # FastAPI endpoints + WebSocket
+│   ├── app.py              # OpenEnv server (via create_app)
 │   ├── environment.py      # Core RL environment (reset/step/state)
 │   ├── market_simulator.py # Historical data replay
 │   ├── feature_engine.py   # Technical indicators → text
 │   └── tasks.py            # Task configs + grading functions
-├── data/ohlcv/             # 10 NIFTY stock CSVs
+├── data/ohlcv/             # 68 NIFTY stock CSVs (~5 years daily)
 ├── models.py               # Pydantic data contracts
-├── client.py               # HTTP client wrapper
+├── client.py               # Typed OpenEnv client
 ├── inference.py            # Baseline LLM agent
 ├── openenv.yaml            # OpenEnv metadata
 ├── Dockerfile              # Container definition
