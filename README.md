@@ -1,17 +1,3 @@
----
-title: Stock Trading RL Environment
-emoji: 📈
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_port: 7860
-tags:
-  - openenv
-  - reinforcement-learning
-  - finance
-  - trading
----
-
 # Stock Trading RL Environment
 
 A real-world OpenEnv environment that simulates daily stock trading on Indian equity markets (NIFTY stocks) using real historical OHLCV data. LLM agents connect via HTTP/WebSocket, receive market observations with technical indicators, and respond with trade actions.
