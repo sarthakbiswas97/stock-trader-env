@@ -15,10 +15,16 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "ohlcv"
 # Stock universe for each task difficulty
 TASK_STOCKS = {
     "single_stock": ["RELIANCE"],
-    "portfolio": ["RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN"],
+    "portfolio": [
+        "RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN",
+        "ICICIBANK", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
+    ],
     "full_autonomous": [
         "RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN",
         "ICICIBANK", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
+        "AXISBANK", "BAJFINANCE", "SUNPHARMA", "TITAN", "HINDUNILVR",
+        "HCLTECH", "WIPRO", "NTPC", "POWERGRID", "ADANIENT",
+        "TATASTEEL", "JSWSTEEL", "COALINDIA", "ONGC", "MARUTI",
     ],
 }
 

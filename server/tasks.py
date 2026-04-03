@@ -23,33 +23,39 @@ TASK_CONFIGS = {
     "portfolio": {
         "name": "Portfolio Management",
         "difficulty": "medium",
-        "description": "Manage a 5-stock portfolio over 30 days. Transaction costs apply, max 40% in any single stock.",
+        "description": "Manage a 10-stock portfolio over 30 days. Transaction costs apply, max 30% in any single stock.",
         "episode_days": 30,
         "initial_capital": 200_000,
-        "symbols": ["RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN"],
+        "symbols": [
+            "RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN",
+            "ICICIBANK", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
+        ],
         "transaction_cost": 0.001,      # 0.1%
         "slippage": 0.001,              # 0.1%
-        "max_position_pct": 0.4,        # Max 40% in one stock
+        "max_position_pct": 0.4,        # Max 40% total exposure
         "max_trades_per_day": 10,
         "regime_gate": False,
-        "position_limit_per_stock": 0.4,
+        "position_limit_per_stock": 0.3, # Max 30% in one stock
     },
     "full_autonomous": {
         "name": "Full Autonomous Trading",
         "difficulty": "hard",
-        "description": "Trade 10 stocks over 40 days with regime gate, position limits, realistic slippage and costs. The agent must learn WHEN NOT to trade.",
+        "description": "Trade 25 stocks over 40 days with regime gate, position limits, realistic slippage and costs. The agent must learn WHEN NOT to trade.",
         "episode_days": 40,
         "initial_capital": 500_000,
         "symbols": [
             "RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN",
             "ICICIBANK", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
+            "AXISBANK", "BAJFINANCE", "SUNPHARMA", "TITAN", "HINDUNILVR",
+            "HCLTECH", "WIPRO", "NTPC", "POWERGRID", "ADANIENT",
+            "TATASTEEL", "JSWSTEEL", "COALINDIA", "ONGC", "MARUTI",
         ],
         "transaction_cost": 0.001,      # 0.1%
         "slippage": 0.002,              # 0.2%
         "max_position_pct": 0.8,        # Max 80% total exposure
         "max_trades_per_day": 5,
         "regime_gate": True,
-        "position_limit_per_stock": 0.2, # Max 20% in one stock
+        "position_limit_per_stock": 0.15, # Max 15% in one stock
     },
 }
 

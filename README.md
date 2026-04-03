@@ -88,32 +88,32 @@ Trade a single stock (RELIANCE) over 20 days with no constraints.
 
 ### Task 2: `portfolio` (Medium)
 
-Manage a 5-stock portfolio over 30 days with realistic trading costs and position limits.
+Manage a 10-stock portfolio over 30 days with realistic trading costs and position limits.
 
 | Parameter | Value |
 |-----------|-------|
-| Stocks | RELIANCE, INFY, TCS, HDFCBANK, SBIN |
+| Stocks | RELIANCE, INFY, TCS, HDFCBANK, SBIN, ICICIBANK, BHARTIARTL, ITC, KOTAKBANK, LT |
 | Episode length | 30 days |
 | Initial capital | Rs 200,000 |
 | Transaction cost | 0.1% per trade |
 | Slippage | 0.1% |
-| Position limit | Max 40% in any single stock |
+| Position limit | Max 30% in any single stock |
 | Max trades/day | 10 |
 
 **Grader:** Weighted composite — 60% risk-adjusted return (Sharpe-like), 25% discipline (no violations), 15% activity balance (not too passive, not overtrading).
 
 ### Task 3: `full_autonomous` (Hard)
 
-Trade 10 stocks over 40 days with regime gate, tight position limits, and realistic costs. The agent must learn WHEN NOT to trade.
+Trade 25 stocks over 40 days with regime gate, tight position limits, and realistic costs. The agent must learn WHEN NOT to trade.
 
 | Parameter | Value |
 |-----------|-------|
-| Stocks | RELIANCE, INFY, TCS, HDFCBANK, SBIN, ICICIBANK, BHARTIARTL, ITC, KOTAKBANK, LT |
+| Stocks | 25 NIFTY stocks (RELIANCE, INFY, TCS, HDFCBANK, SBIN, ICICIBANK, BHARTIARTL, ITC, KOTAKBANK, LT, AXISBANK, BAJFINANCE, SUNPHARMA, TITAN, HINDUNILVR, HCLTECH, WIPRO, NTPC, POWERGRID, ADANIENT, TATASTEEL, JSWSTEEL, COALINDIA, ONGC, MARUTI) |
 | Episode length | 40 days |
 | Initial capital | Rs 500,000 |
 | Transaction cost | 0.1% per trade |
 | Slippage | 0.2% |
-| Position limit | Max 20% in any single stock |
+| Position limit | Max 15% in any single stock |
 | Max trades/day | 5 |
 | Regime gate | Active — blocks trading when >70% stocks declining or avg change < -0.5% |
 
@@ -181,7 +181,7 @@ Rewards provide signal at every step, not just end-of-episode:
 
 ## Market Data
 
-Real historical daily OHLCV data for 10 NIFTY stocks stored in `data/ohlcv/`. Each episode picks a random start window (with 50-day lookback buffer for indicator computation), ensuring diverse market conditions across runs.
+Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 100) stored in `data/ohlcv/`, spanning ~5 years of market history. Each episode picks a random start window (with 50-day lookback buffer for indicator computation), ensuring diverse market conditions across runs.
 
 ## Baseline Scores
 
