@@ -135,18 +135,18 @@ pip install -r requirements.txt
 ### Run locally
 
 ```bash
-# Start the environment server
-uvicorn server.app:app --host 0.0.0.0 --port 8000
+# 1. Build the Docker image
+docker build -t stock-trader-env .
 
-# In another terminal, run the baseline agent
-HF_TOKEN=your-key-here python inference.py
+# 2. Run the baseline agent (launches the Docker container automatically)
+IMAGE_NAME=stock-trader-env HF_TOKEN=your-key-here python inference.py
 ```
 
-### Docker
+Or without Docker (for development):
 
 ```bash
-docker build -t stock-trader-env .
-docker run -p 7860:7860 stock-trader-env
+# Start the environment server directly
+uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
 ### Environment Variables
@@ -155,8 +155,8 @@ docker run -p 7860:7860 stock-trader-env
 |----------|-------------|---------|
 | `HF_TOKEN` / `API_KEY` | API key for the LLM endpoint | (required) |
 | `API_BASE_URL` | LLM API endpoint | `https://router.huggingface.co/v1` |
-| `MODEL_NAME` | Model identifier | `Qwen/Qwen2.5-72B-Instruct` |
-| `IMAGE_NAME` | Docker image name for the environment | (set by evaluator) |
+| `MODEL_NAME` | Model identifier (baseline tested with `gpt-4o-mini`) | `Qwen/Qwen2.5-72B-Instruct` |
+| `IMAGE_NAME` | Docker image name for the environment (built locally or pulled from HF) | `stock-trader-env` |
 
 ## API Endpoints
 
