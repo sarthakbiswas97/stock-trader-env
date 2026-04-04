@@ -38,6 +38,7 @@ Actions are plain text strings that any LLM can produce:
 | `BUY <SYMBOL>` | `BUY RELIANCE` | Buy a specific stock (multi-stock tasks) |
 | `SELL <SYMBOL>` | `SELL INFY` | Sell entire position in a stock |
 | `BUY <SYMBOL> <FRACTION>` | `BUY TCS 0.3` | Buy using 30% of available cash |
+| `SELL <SYMBOL> <FRACTION>` | `SELL TCS 0.3` | Sell 30% of position in a stock |
 
 Invalid actions default to `HOLD` — the environment never crashes on bad input.
 
