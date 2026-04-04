@@ -162,7 +162,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         if action_type == "BUY" and symbol and not regime_blocked:
             reward += self._execute_buy(symbol, fraction, prices)
         elif action_type == "SELL" and symbol:
-            reward += self._execute_sell(symbol, prices)
+            reward += self._execute_sell(symbol, fraction, prices)
         elif action_type == "HOLD":
             pass  # No action
 
@@ -297,8 +297,8 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         return 0.0  # Neutral — reward comes from P&L
 
-    def _execute_sell(self, symbol: str, prices: dict) -> float:
-        """Execute a sell order (sell entire position). Returns reward adjustment."""
+    def _execute_sell(self, symbol: str, fraction: float, prices: dict) -> float:
+        """Execute a sell order. Fraction controls how much of the position to sell."""
         config = self._task_config
         portfolio = self._portfolio
 
@@ -308,9 +308,14 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         pos = portfolio.positions[symbol]
         price = prices[symbol]
 
+        # Compute quantity to sell
+        sell_qty = int(pos["qty"] * fraction)
+        if sell_qty <= 0:
+            return 0.0  # Nothing to sell at this fraction
+
         # Apply slippage and costs
         effective_price = price * (1 - config["slippage"])
-        proceeds = pos["qty"] * effective_price
+        proceeds = sell_qty * effective_price
         cost = proceeds * config["transaction_cost"]
         net_proceeds = proceeds - cost
 
@@ -323,12 +328,18 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             "day": self._sim.current_day,
             "action": "SELL",
             "symbol": symbol,
-            "qty": pos["qty"],
+            "qty": sell_qty,
             "price": effective_price,
             "pnl_pct": round(trade_pnl * 100, 2),
         })
 
-        del portfolio.positions[symbol]
+        # Update or remove position
+        remaining = pos["qty"] - sell_qty
+        if remaining > 0:
+            portfolio.positions[symbol] = {"qty": remaining, "avg_price": pos["avg_price"]}
+        else:
+            del portfolio.positions[symbol]
+
         portfolio.trades_today += 1
         portfolio.total_trades += 1
 
