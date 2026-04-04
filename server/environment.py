@@ -189,8 +189,8 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             for sym, pos in self._portfolio.positions.items()
         )
         exposure_pct = total_exposure / value_after if value_after > 0 else 0
-        if exposure_pct <= self._task_config["max_position_pct"]:
-            reward += 0.02  # Small bonus for staying within limits
+        if exposure_pct <= self._task_config["max_position_pct"] and len(self._portfolio.positions) > 0:
+            reward += 0.02  # Small bonus for staying within limits (only with active positions)
 
         self._last_reward = round(reward, 4)
 
