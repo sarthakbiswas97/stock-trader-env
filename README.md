@@ -190,9 +190,9 @@ Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 10
 
 | Task | Score | Steps | Agent Behavior |
 |------|-------|-------|----------------|
-| `single_stock` | 0.600 | 20 | Two buy-sell cycles on RELIANCE, captured upside on second entry |
-| `portfolio` | 0.376 | 30 | Traded across 6 of 10 stocks, struggled with position sizing across larger universe |
-| `full_autonomous` | 0.667 | 40 | Good diversification across 8 of 25 stocks with fractional sizing, some regime penalties |
+| `single_stock` | 0.290 | 20 | One buy-sell cycle on RELIANCE, mostly held with no position |
+| `portfolio` | 0.599 | 30 | Active trading across 8 of 10 stocks, good diversification |
+| `full_autonomous` | 0.443 | 40 | Traded 12 of 25 stocks with fractional sizing, hit regime penalty on KOTAKBANK |
 
 ## Project Structure
 
