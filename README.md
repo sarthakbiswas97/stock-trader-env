@@ -26,6 +26,8 @@ Unlike toy environments, agents must deal with:
 - **Regime gates** that penalize trading during market-wide downturns
 - **Meaningful reward shaping** — not just end-of-episode binary scores
 
+Fully compliant with the [OpenEnv](https://github.com/meta-pytorch/OpenEnv) specification — typed Pydantic models, `step()`/`reset()`/`state()` interface, `openenv.yaml` metadata, and validated via `openenv validate`. All episodes are **seed-reproducible** for deterministic evaluation.
+
 ## Action Space
 
 Actions are plain text strings that any LLM can produce:
@@ -170,15 +172,59 @@ uvicorn server.app:app --host 0.0.0.0 --port 7860
 | `GET` | `/schema` | Action/observation JSON schemas |
 | `WebSocket` | `/ws` | Persistent session (recommended for agents) |
 
+## Architecture
+
+```
+Agent connects via WebSocket (/ws)
+        │
+        ▼
+┌─ Environment (server/environment.py) ─────────────────────┐
+│                                                            │
+│   reset(task_id, seed)                                     │
+│     └─ MarketSimulator picks random window in 5yr history  │
+│     └─ Portfolio initialized with task capital              │
+│     └─ FeatureEngine computes indicators from 50-day       │
+│        lookback (RSI, MACD, Bollinger, trend, momentum,    │
+│        volume, volatility)                                 │
+│     └─ Returns MarketObservation with human-readable text  │
+│                                                            │
+│   step(action)                                             │
+│     └─ Parse action (BUY/SELL/HOLD + symbol + fraction)    │
+│     └─ Check constraints (trade limits, position limits)   │
+│     └─ Check regime gate (hard task: market breadth)       │
+│     └─ Execute trade with slippage + transaction costs     │
+│     └─ Advance one day in historical data                  │
+│     └─ Compute reward (PnL + discipline - penalties)       │
+│     └─ Grader scores performance (0.0–1.0)                 │
+│     └─ Returns new MarketObservation                       │
+│                                                            │
+│   state() → episode metadata                               │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ Grader (server/tasks.py) ────────────────────────────────┐
+│  single_stock: agent return vs buy-and-hold benchmark      │
+│  portfolio:    60% Sharpe + 25% discipline + 15% activity  │
+│  full_auto:    35% return + 25% risk-adj + 25% regime      │
+│                + 15% risk management                       │
+│  All graders are deterministic with same seed              │
+└────────────────────────────────────────────────────────────┘
+```
+
+The **MarketSimulator** replays real historical prices — each seed selects a different window in 5 years of data, so the agent encounters bull markets, bear markets, high volatility, and sideways conditions across episodes. The **FeatureEngine** converts raw OHLCV data into human-readable technical analysis text that any LLM can reason about without needing numeric arrays.
+
 ## Reward Design
 
 Rewards provide signal at every step, not just end-of-episode:
 
 - **PnL reward** — Scaled daily portfolio return (primary signal)
-- **Risk discipline bonus** — Small positive reward for staying within position limits
-- **Regime gate penalty** — Negative reward for trading during market-wide downturns (hard task)
-- **Trade limit violation** — Penalty for exceeding daily trade limits
-- **Invalid sell penalty** — Penalty for attempting to sell a stock not held
+- **Risk discipline bonus** — Small positive reward for staying within position limits (only when agent has active positions — no free reward for holding empty)
+- **Regime gate penalty** — Negative reward (-0.3) for trading during market-wide downturns (hard task only)
+- **Trade limit violation** — Penalty (-0.1) for exceeding daily trade limits
+- **Invalid sell penalty** — Penalty (-0.05) for attempting to sell a stock not held
+
+Reward values range from approximately -0.30 to +0.20 per step, providing rich gradient signal for RL training. The reward is **never sparse** — even HOLD actions receive PnL-based feedback when the agent has positions.
 
 ## Market Data
 
