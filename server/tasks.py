@@ -1,9 +1,18 @@
 """
 Task definitions and graders for the 3 difficulty levels.
-Each grader returns a deterministic score between 0.0 and 1.0.
+Each grader returns a deterministic score strictly between 0 and 1 (exclusive).
 """
 
 import math
+
+# Validator requires scores in open interval (0, 1) — never exactly 0.0 or 1.0
+SCORE_MIN = 0.001
+SCORE_MAX = 0.999
+
+
+def _clamp_score(score: float) -> float:
+    """Clamp score to the open interval (0, 1)."""
+    return round(max(SCORE_MIN, min(SCORE_MAX, score)), 4)
 
 TASK_CONFIGS = {
     "single_stock": {
@@ -78,21 +87,23 @@ def grade_single_stock(
     agent_return = (final_value - initial_capital) / initial_capital
 
     if agent_return <= -0.05:
-        return 0.1
+        score = 0.1
     elif agent_return <= 0:
-        return 0.2 + (agent_return + 0.05) / 0.05 * 0.1
+        score = 0.2 + (agent_return + 0.05) / 0.05 * 0.1
     elif buy_and_hold_return <= 0:
-        return min(0.8, 0.5 + agent_return * 3)
+        score = min(0.8, 0.5 + agent_return * 3)
     else:
         ratio = agent_return / max(buy_and_hold_return, 0.001)
         if ratio >= 1.5:
-            return min(1.0, 0.8 + (ratio - 1.5) * 0.2)
+            score = 0.8 + (ratio - 1.5) * 0.2
         elif ratio >= 1.0:
-            return 0.6 + (ratio - 1.0) * 0.4
+            score = 0.6 + (ratio - 1.0) * 0.4
         elif ratio >= 0.5:
-            return 0.4 + (ratio - 0.5) * 0.4
+            score = 0.4 + (ratio - 0.5) * 0.4
         else:
-            return 0.3 + ratio * 0.2
+            score = 0.3 + ratio * 0.2
+
+    return _clamp_score(score)
 
 
 def grade_portfolio(
@@ -136,7 +147,7 @@ def grade_portfolio(
         activity_score = 0.8 + min(0.2, trades_per_day * 0.05)
 
     score = return_score * 0.60 + discipline_score * 0.25 + activity_score * 0.15
-    return round(max(0.0, min(1.0, score)), 4)
+    return _clamp_score(score)
 
 
 def grade_full_autonomous(
@@ -190,7 +201,7 @@ def grade_full_autonomous(
         + regime_score * 0.25
         + risk_score * 0.15
     )
-    return round(max(0.0, min(1.0, score)), 4)
+    return _clamp_score(score)
 
 
 GRADERS = {
