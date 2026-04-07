@@ -47,7 +47,7 @@ class Portfolio:
         result = []
         for sym, pos in self.positions.items():
             price = prices.get(sym, pos["avg_price"])
-            pnl_pct = (price - pos["avg_price"]) / pos["avg_price"] * 100
+            pnl_pct = (price - pos["avg_price"]) / pos["avg_price"] * 100 if pos["avg_price"] > 0 else 0.0
             result.append(PositionInfo(
                 symbol=sym,
                 quantity=pos["qty"],
@@ -180,7 +180,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         # Compute step reward
         value_after = self._portfolio.get_value(new_prices)
-        pnl_reward = (value_after - value_before) / value_before * 10  # Scale
+        pnl_reward = (value_after - value_before) / value_before * 10 if value_before > 0 else 0.0
         reward += pnl_reward
 
         # Risk discipline bonus
@@ -322,7 +322,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         portfolio.cash += net_proceeds
 
         # Calculate trade P&L for logging
-        trade_pnl = (effective_price - pos["avg_price"]) / pos["avg_price"]
+        trade_pnl = (effective_price - pos["avg_price"]) / pos["avg_price"] if pos["avg_price"] > 0 else 0.0
 
         portfolio.trade_log.append({
             "day": self._sim.current_day,

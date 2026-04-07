@@ -94,8 +94,6 @@ def grade_single_stock(
         else:
             return 0.3 + ratio * 0.2
 
-    return max(0.0, min(1.0, score))
-
 
 def grade_portfolio(
     final_value: float,
