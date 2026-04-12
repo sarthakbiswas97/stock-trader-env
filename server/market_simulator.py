@@ -3,11 +3,9 @@ Market simulator — replays historical OHLCV data for the trading environment.
 Loads real price data from Indian equity markets (NIFTY stocks).
 """
 
-import os
 import random
 from pathlib import Path
 import pandas as pd
-import numpy as np
 
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "ohlcv"

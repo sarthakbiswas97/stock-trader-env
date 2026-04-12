@@ -1,7 +1,5 @@
 """Tests for grading functions — the score that determines agent quality."""
 
-import pytest
-
 from server.tasks import (
     grade_single_stock,
     grade_portfolio,

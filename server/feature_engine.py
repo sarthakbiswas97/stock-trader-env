@@ -75,11 +75,11 @@ def compute_bollinger_position(close: pd.Series, period: int = 20) -> str:
     lower = middle - 2 * std
 
     price = close.iloc[-1]
-    u, l = upper.iloc[-1], lower.iloc[-1]
-    if np.isnan(u) or np.isnan(l) or u == l:
+    upper_val, lower_val = upper.iloc[-1], lower.iloc[-1]
+    if np.isnan(upper_val) or np.isnan(lower_val) or upper_val == lower_val:
         return "middle"
 
-    pos = (price - l) / (u - l)
+    pos = (price - lower_val) / (upper_val - lower_val)
     if pos > 0.8:
         return "upper_band (overbought)"
     elif pos < 0.2:

@@ -466,7 +466,6 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         initial = config["initial_capital"]
 
         if self._current_task == "single_stock":
-            sym = config["symbols"][0]
             bh_return = 0.0
             if self._done and len(self._portfolio.daily_values) > 1:
                 first_val = self._portfolio.daily_values[0]

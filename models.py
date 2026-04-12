@@ -8,7 +8,6 @@ Inherits from openenv-core base types for protocol compliance.
 """
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Dict, Optional
 
 from openenv.core.env_server.types import (
     Action as BaseAction,
