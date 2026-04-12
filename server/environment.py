@@ -14,6 +14,7 @@ from models import TradeAction, MarketObservation, TradingState, PositionInfo
 from server.market_simulator import MarketSimulator
 from server.feature_engine import compute_all_features, features_to_text
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
+from server import __version__
 
 
 class Portfolio:
@@ -357,6 +358,8 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
                 portfolio_value=0, cash=0, positions=[],
                 market_summary="No episode active.", available_actions=["HOLD"],
                 task_id="", score=0.0,
+                env_version=__version__,
+                task_version="",
             )
 
         prices = {}
@@ -448,6 +451,8 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             available_actions=list(set(available)),
             task_id=self._current_task,
             score=round(score, 4),
+            env_version=__version__,
+            task_version=config["version"],
         )
 
     def _compute_score(self) -> float:
