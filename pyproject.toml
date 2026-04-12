@@ -1,6 +1,6 @@
 [project]
 name = "stock-trader-env"
-version = "1.0.0"
+version = "1.1.0"
 description = "Realistic stock trading RL environment using OpenEnv"
 requires-python = ">=3.10"
 dependencies = [

@@ -16,6 +16,7 @@ def _clamp_score(score: float) -> float:
 
 TASK_CONFIGS = {
     "single_stock": {
+        "version": "1.0.0",
         "name": "Single Stock Trading",
         "difficulty": "easy",
         "description": "Trade a single stock (RELIANCE) over 20 days. No transaction costs, no position limits.",
@@ -30,6 +31,7 @@ TASK_CONFIGS = {
         "position_limit_per_stock": 1.0,
     },
     "portfolio": {
+        "version": "1.0.0",
         "name": "Portfolio Management",
         "difficulty": "medium",
         "description": "Manage a 10-stock portfolio over 30 days. Transaction costs apply, max 30% in any single stock.",
@@ -47,6 +49,7 @@ TASK_CONFIGS = {
         "position_limit_per_stock": 0.3, # Max 30% in one stock
     },
     "full_autonomous": {
+        "version": "1.0.0",
         "name": "Full Autonomous Trading",
         "difficulty": "hard",
         "description": "Trade 25 stocks over 40 days with regime gate, position limits, realistic slippage and costs. The agent must learn WHEN NOT to trade.",
