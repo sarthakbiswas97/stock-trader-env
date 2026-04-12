@@ -19,3 +19,10 @@ inference = [
 
 [project.scripts]
 server = "server.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+include = ["server*", "models*"]
