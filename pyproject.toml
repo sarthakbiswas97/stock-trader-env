@@ -18,6 +18,8 @@ inference = [
 ]
 training = [
     "gymnasium>=1.0",
+    "mlflow>=2.0",
+    "dvc",
 ]
 
 [project.scripts]
