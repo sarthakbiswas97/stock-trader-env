@@ -9,3 +9,4 @@ inference_results.json
 .DS_Store
 validate-submission.sh
 CLAUDE.md
+notes.md

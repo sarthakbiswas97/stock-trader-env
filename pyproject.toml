@@ -16,6 +16,9 @@ dependencies = [
 inference = [
     "openai",
 ]
+training = [
+    "gymnasium>=1.0",
+]
 
 [project.scripts]
 server = "server.app:main"
@@ -25,4 +28,4 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
-include = ["server*", "models*"]
+include = ["server*", "models*", "training*"]
