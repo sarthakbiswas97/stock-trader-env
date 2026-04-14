@@ -109,7 +109,7 @@ def create_local_agent(
 def create_api_agent(
     model_name: str = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
     api_token: str | None = None,
-    max_new_tokens: int = 200,
+    max_new_tokens: int = 1024,
 ) -> Callable[[str], str]:
     """Create an agent that uses HuggingFace Inference API.
 
@@ -138,7 +138,13 @@ def create_api_agent(
                 max_tokens=max_new_tokens,
                 temperature=0.7,
             )
-            text = response.choices[0].message.content
+            msg = response.choices[0].message
+            # DeepSeek-R1 puts reasoning in reasoning_content, answer in content
+            text = msg.content or ""
+            reasoning = getattr(msg, "reasoning_content", None) or ""
+            if not text and reasoning:
+                # Model only produced reasoning, no final answer — parse action from reasoning
+                text = reasoning
             action = parse_action(text)
             logger.debug("API response: %s -> action: %s", text[:100], action)
             return action
