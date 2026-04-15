@@ -152,7 +152,7 @@ def train(args: argparse.Namespace) -> None:
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
-        warmup_ratio=args.warmup_ratio,
+        warmup_steps=int(total_steps * args.warmup_ratio),
         lr_scheduler_type="cosine",
         logging_steps=10,
         save_strategy="epoch",
@@ -165,12 +165,22 @@ def train(args: argparse.Namespace) -> None:
         optim="adamw_torch_fused",
     )
 
+    def formatting_func(examples):
+        """Convert messages to chat-formatted text for Unsloth."""
+        texts = []
+        for messages in examples["messages"]:
+            text = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False,
+            )
+            texts.append(text)
+        return {"text": texts}
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        processing_class=tokenizer,
+        formatting_func=formatting_func,
     )
 
     start_time = time.time()
