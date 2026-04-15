@@ -125,6 +125,105 @@ def compute_momentum(close: pd.Series, period: int = 10) -> str:
     return f"flat ({change:+.1f}%)"
 
 
+def compute_candlestick(df: pd.DataFrame) -> str:
+    """Detect candlestick patterns from the latest bar."""
+    if len(df) < 2:
+        return "none"
+
+    o, h, l, c = (
+        float(df.iloc[-1]["open"]),
+        float(df.iloc[-1]["high"]),
+        float(df.iloc[-1]["low"]),
+        float(df.iloc[-1]["close"]),
+    )
+    o_prev, h_prev, l_prev, c_prev = (
+        float(df.iloc[-2]["open"]),
+        float(df.iloc[-2]["high"]),
+        float(df.iloc[-2]["low"]),
+        float(df.iloc[-2]["close"]),
+    )
+
+    body = abs(c - o)
+    total_range = h - l
+    if total_range == 0:
+        return "none"
+
+    body_ratio = body / total_range
+    upper_shadow = h - max(o, c)
+    lower_shadow = min(o, c) - l
+
+    # Doji: tiny body relative to range
+    if body_ratio < 0.1:
+        return "doji (indecision)"
+
+    # Hammer: small body in upper third, long lower shadow
+    if lower_shadow > 2 * body and upper_shadow < body and c > o:
+        return "hammer (bullish reversal)"
+
+    # Inverted hammer / shooting star
+    if upper_shadow > 2 * body and lower_shadow < body and c < o:
+        return "shooting_star (bearish reversal)"
+
+    # Bullish engulfing: today's bullish body covers yesterday's bearish body
+    body_prev = abs(c_prev - o_prev)
+    if c > o and c_prev < o_prev and body > body_prev and o <= c_prev and c >= o_prev:
+        return "bullish_engulfing (reversal)"
+
+    # Bearish engulfing
+    if c < o and c_prev > o_prev and body > body_prev and o >= c_prev and c <= o_prev:
+        return "bearish_engulfing (reversal)"
+
+    return "none"
+
+
+def compute_gap(df: pd.DataFrame) -> dict:
+    """Detect gap up/down from previous day's range."""
+    if len(df) < 2:
+        return {"type": "none", "pct": 0.0}
+
+    today_open = float(df.iloc[-1]["open"])
+    prev_high = float(df.iloc[-2]["high"])
+    prev_low = float(df.iloc[-2]["low"])
+    prev_close = float(df.iloc[-2]["close"])
+
+    if prev_close == 0:
+        return {"type": "none", "pct": 0.0}
+
+    if today_open > prev_high:
+        pct = (today_open - prev_close) / prev_close * 100
+        return {"type": "up", "pct": round(pct, 1)}
+    elif today_open < prev_low:
+        pct = (today_open - prev_close) / prev_close * 100
+        return {"type": "down", "pct": round(pct, 1)}
+
+    return {"type": "none", "pct": 0.0}
+
+
+def compute_range_expansion(df: pd.DataFrame, period: int = 20) -> dict:
+    """Detect if today's range is unusually large vs recent average."""
+    if len(df) < period + 1:
+        return {"ratio": 1.0, "label": "normal"}
+
+    ranges = (df["high"] - df["low"]).astype(float)
+    avg_range = ranges.iloc[-period - 1:-1].mean()
+    if avg_range == 0:
+        return {"ratio": 1.0, "label": "normal"}
+
+    today_range = float(ranges.iloc[-1])
+    ratio = today_range / avg_range
+
+    if ratio > 2.0:
+        label = "very_expanded"
+    elif ratio > 1.5:
+        label = "expanded"
+    elif ratio < 0.5:
+        label = "compressed"
+    else:
+        label = "normal"
+
+    return {"ratio": round(ratio, 1), "label": label}
+
+
 def compute_all_features(df: pd.DataFrame) -> dict:
     """Compute all features for a stock. Input: DataFrame with open,high,low,close,volume columns."""
     close = df["close"]
@@ -138,6 +237,9 @@ def compute_all_features(df: pd.DataFrame) -> dict:
         "bollinger": compute_bollinger_position(close),
         "volatility": compute_volatility(close),
         "momentum": compute_momentum(close),
+        "candlestick": compute_candlestick(df),
+        "gap": compute_gap(df),
+        "range": compute_range_expansion(df),
     }
 
 
@@ -162,4 +264,21 @@ def features_to_text(symbol: str, price: float, daily_change_pct: float, feature
         f"  Volume: {vol_spike:.1f}x avg ({vol_label}) | Volatility: {features['volatility']}",
         f"  Momentum: {features['momentum']}",
     ]
+
+    # Candlestick pattern (only show if detected)
+    candlestick = features.get("candlestick", "none")
+    gap = features.get("gap", {"type": "none", "pct": 0.0})
+    range_info = features.get("range", {"ratio": 1.0, "label": "normal"})
+
+    extra_parts = []
+    if candlestick != "none":
+        extra_parts.append(f"Candle: {candlestick}")
+    if gap["type"] != "none":
+        extra_parts.append(f"Gap: {gap['type']} {gap['pct']:+.1f}%")
+    if range_info["label"] != "normal":
+        extra_parts.append(f"Range: {range_info['label']} ({range_info['ratio']:.1f}x avg)")
+
+    if extra_parts:
+        lines.append(f"  {' | '.join(extra_parts)}")
+
     return "\n".join(lines)
