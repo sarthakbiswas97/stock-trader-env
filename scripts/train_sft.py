@@ -1,18 +1,17 @@
 """SFT Training — Fine-tune DeepSeek-R1 7B on oracle-labeled trading data.
 
-Runs on RunPod A4500 (or any Ampere GPU with 20GB+ VRAM).
 Uses Unsloth for 2-3x faster training with 40% less VRAM.
-All hyperparameters logged to MLflow for experiment tracking.
+Includes automatic plateau detection to stop training when loss improvement
+becomes negligible -- prevents overfitting and saves compute.
 
 Usage:
-    # On RunPod after uploading project:
     cd /workspace/stock-trader-env
     pip install -q --upgrade typing_extensions
     pip install -q unsloth unsloth_zoo trl datasets mlflow huggingface_hub
     pip install -q -e .
 
     python scripts/train_sft.py
-    python scripts/train_sft.py --epochs 3 --push-to-hub --hf-repo sarthakbiswas/stock-trader-sft-v2-model
+    python scripts/train_sft.py --push-to-hub --hf-repo sarthakbiswas/stock-trader-sft-v2-model
 """
 
 from __future__ import annotations
@@ -23,10 +22,78 @@ import os
 import time
 
 import mlflow
+import numpy as np
 import torch
+from transformers import TrainerCallback
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Plateau detection callback
+# ---------------------------------------------------------------------------
+
+class TrainLossPlateauCallback(TrainerCallback):
+    """Stop training when relative loss improvement drops below threshold.
+
+    Compares average loss of the current window vs the previous window.
+    If improvement is below `rel_threshold` for `patience` consecutive
+    checks, sets `control.should_training_stop = True`.
+    """
+
+    def __init__(
+        self,
+        window: int = 30,
+        rel_threshold: float = 0.015,
+        patience: int = 3,
+    ):
+        self.window = window  # Number of log events per comparison window
+        self.rel_threshold = rel_threshold
+        self.patience = patience
+        self._losses: list[float] = []
+        self._plateau_count = 0
+        self._check_count = 0
+        self._stopped_at_step: int | None = None
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None or "loss" not in logs:
+            return
+
+        self._losses.append(logs["loss"])
+
+        # Need at least 2 full windows to compare
+        if len(self._losses) < 2 * self.window:
+            return
+
+        # Only check at window boundaries
+        if len(self._losses) % self.window != 0:
+            return
+
+        prev_avg = float(np.mean(self._losses[-2 * self.window : -self.window]))
+        curr_avg = float(np.mean(self._losses[-self.window :]))
+
+        rel_improvement = (prev_avg - curr_avg) / prev_avg if prev_avg > 0 else 0.0
+        self._check_count += 1
+
+        logger.info(
+            "Plateau check #%d: prev_avg=%.4f, curr_avg=%.4f, rel_improvement=%.3f%% (threshold=%.1f%%, patience=%d/%d)",
+            self._check_count, prev_avg, curr_avg, rel_improvement * 100,
+            self.rel_threshold * 100, self._plateau_count, self.patience,
+        )
+
+        if rel_improvement < self.rel_threshold:
+            self._plateau_count += 1
+            if self._plateau_count >= self.patience:
+                self._stopped_at_step = state.global_step
+                logger.info(
+                    "PLATEAU DETECTED at step %d. Loss %.4f, improvement %.3f%% < %.1f%% for %d consecutive checks. Stopping.",
+                    state.global_step, curr_avg, rel_improvement * 100,
+                    self.rel_threshold * 100, self.patience,
+                )
+                control.should_training_stop = True
+        else:
+            self._plateau_count = 0
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +104,7 @@ DEFAULTS = {
     "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
     "dataset": "sarthakbiswas/stock-trader-sft-v2",
     "max_seq_length": 1024,
-    "epochs": 3,
+    "epochs": 1,
     "batch_size": 4,
     "grad_accum": 8,
     "lr": 2e-5,
@@ -45,11 +112,14 @@ DEFAULTS = {
     "lora_rank": 64,
     "lora_alpha": 16,
     "output_dir": "/workspace/sft-v2-checkpoint",
+    "plateau_window": 30,
+    "plateau_threshold": 0.015,
+    "plateau_patience": 3,
 }
 
 
 def train(args: argparse.Namespace) -> None:
-    """Run SFT training with Unsloth."""
+    """Run SFT training with Unsloth + plateau detection."""
 
     # ------------------------------------------------------------------
     # 1. Environment check
@@ -131,18 +201,24 @@ def train(args: argparse.Namespace) -> None:
         "val_examples": len(val_ds),
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none",
         "trainable_params": trainable_params,
+        "plateau_window": args.plateau_window,
+        "plateau_threshold": args.plateau_threshold,
+        "plateau_patience": args.plateau_patience,
     })
 
     logger.info("MLflow run: %s (ID: %s)", run_name, mlflow_run.info.run_id)
 
     # ------------------------------------------------------------------
-    # 5. Training
+    # 5. Training with plateau detection
     # ------------------------------------------------------------------
     from trl import SFTTrainer, SFTConfig
 
     total_steps = len(train_ds) // (args.batch_size * args.grad_accum) * args.epochs
+
     logger.info("Effective batch size: %d", args.batch_size * args.grad_accum)
-    logger.info("Total steps: ~%d", total_steps)
+    logger.info("Total steps (ceiling): ~%d", total_steps)
+    logger.info("Plateau detection: window=%d, threshold=%.1f%%, patience=%d",
+                args.plateau_window, args.plateau_threshold * 100, args.plateau_patience)
     logger.info("")
 
     training_args = SFTConfig(
@@ -155,8 +231,8 @@ def train(args: argparse.Namespace) -> None:
         warmup_steps=int(total_steps * args.warmup_ratio),
         lr_scheduler_type="cosine",
         logging_steps=10,
-        save_strategy="epoch",
-        eval_strategy="epoch",
+        save_strategy="no",
+        eval_strategy="no",
         bf16=True,
         max_seq_length=args.max_seq_length,
         gradient_checkpointing=True,
@@ -165,7 +241,7 @@ def train(args: argparse.Namespace) -> None:
         optim="adamw_torch_fused",
     )
 
-    # Pre-convert messages to text before passing to SFTTrainer
+    # Pre-convert messages to text
     def convert_to_text(example):
         text = tokenizer.apply_chat_template(
             example["messages"], tokenize=False, add_generation_prompt=False,
@@ -177,36 +253,65 @@ def train(args: argparse.Namespace) -> None:
     val_text = val_ds.map(convert_to_text, remove_columns=["messages"])
     logger.info("Conversion done. Train: %d, Val: %d", len(train_text), len(val_text))
 
+    # Plateau callback
+    plateau_callback = TrainLossPlateauCallback(
+        window=args.plateau_window,
+        rel_threshold=args.plateau_threshold,
+        patience=args.plateau_patience,
+    )
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=train_text,
         eval_dataset=val_text,
         processing_class=tokenizer,
+        callbacks=[plateau_callback],
     )
 
     start_time = time.time()
-    logger.info("Starting training...")
+    logger.info("Starting training (plateau callback will auto-stop)...")
     train_result = trainer.train()
     elapsed = time.time() - start_time
 
-    logger.info("Training complete in %.1f minutes", elapsed / 60)
+    stopped_at = plateau_callback._stopped_at_step
+    final_step = trainer.state.global_step
+
+    logger.info("")
+    logger.info("Training ended at step %d (%.1f minutes)", final_step, elapsed / 60)
+    if stopped_at:
+        logger.info("Plateau detected at step %d", stopped_at)
+    else:
+        logger.info("Completed full epoch (no plateau detected)")
     logger.info("Final train loss: %.4f", train_result.training_loss)
 
+    # ------------------------------------------------------------------
+    # 6. Run eval once
+    # ------------------------------------------------------------------
+    logger.info("")
+    logger.info("Running evaluation on val set...")
+    eval_result = trainer.evaluate()
+    eval_loss = eval_result.get("eval_loss", -1.0)
+    logger.info("Eval loss: %.4f", eval_loss)
+
+    # Log final metrics
     mlflow.log_metrics({
         "final_train_loss": train_result.training_loss,
+        "eval_loss": eval_loss,
         "training_time_minutes": round(elapsed / 60, 1),
+        "stopped_at_step": stopped_at or final_step,
+        "plateau_detected": 1 if stopped_at else 0,
     })
 
     # ------------------------------------------------------------------
-    # 6. Save checkpoint
+    # 7. Save checkpoint
     # ------------------------------------------------------------------
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
     logger.info("Checkpoint saved to %s", args.output_dir)
 
     # ------------------------------------------------------------------
-    # 7. Quick sanity test
+    # 8. Sanity test
     # ------------------------------------------------------------------
     logger.info("")
     logger.info("=== Sanity Test ===")
@@ -250,7 +355,7 @@ RELIANCE: Rs1,250 (-1.5% today)
     mlflow.log_text(response, "sanity_test_response.txt")
 
     # ------------------------------------------------------------------
-    # 8. Push to HF Hub (optional)
+    # 9. Push to HF Hub (optional)
     # ------------------------------------------------------------------
     if args.push_to_hub and args.hf_repo:
         hf_token = os.environ.get("HF_TOKEN")
@@ -285,6 +390,9 @@ def main() -> None:
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
     parser.add_argument("--push-to-hub", action="store_true", help="Push adapter to HF Hub after training")
     parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-sft-v2-model", help="HF repo for model push")
+    parser.add_argument("--plateau-window", type=int, default=DEFAULTS["plateau_window"])
+    parser.add_argument("--plateau-threshold", type=float, default=DEFAULTS["plateau_threshold"])
+    parser.add_argument("--plateau-patience", type=int, default=DEFAULTS["plateau_patience"])
     args = parser.parse_args()
 
     train(args)
