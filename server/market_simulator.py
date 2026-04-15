@@ -3,12 +3,21 @@ Market simulator — replays historical OHLCV data for the trading environment.
 Loads real price data from Indian equity markets (NIFTY stocks).
 """
 
+from __future__ import annotations
+
+import logging
 import random
+from datetime import date
 from pathlib import Path
+
 import pandas as pd
 
+from server.macro_data import get_macro_snapshot, load_macro_data
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "ohlcv"
+MACRO_DIR = Path(__file__).parent.parent / "data" / "macro"
 
 # Stock universe for each task difficulty
 TASK_STOCKS = {
@@ -63,6 +72,9 @@ class MarketSimulator:
         self._all_data: dict[str, pd.DataFrame] = {}
         for sym in self.symbols:
             self._all_data[sym] = _load_stock_data(sym)
+
+        # Load macro data (optional -- graceful if not present)
+        self._macro_data = load_macro_data(MACRO_DIR)
 
         # Episode state
         self._start_idx: dict[str, int] = {}
@@ -158,3 +170,29 @@ class MarketSimulator:
         today = df.iloc[idx]["close"]
         five_ago = df.iloc[idx - 5]["close"]
         return (today - five_ago) / five_ago * 100
+
+    def get_current_date(self) -> date | None:
+        """Get the calendar date of the current trading day."""
+        if not self._start_idx:
+            return None
+        sym = self.symbols[0]
+        idx = self._start_idx[sym] + 50 + self._current_day
+        df = self._all_data[sym]
+        if idx >= len(df):
+            idx = len(df) - 1
+        ts = df.iloc[idx]["timestamp"]
+        if isinstance(ts, pd.Timestamp):
+            return ts.date()
+        return ts
+
+    def get_macro_snapshot_data(self) -> dict:
+        """Get macro context for the current trading day.
+
+        Returns an empty dict if macro data is not loaded.
+        """
+        if self._macro_data is None:
+            return {}
+        current_date = self.get_current_date()
+        if current_date is None:
+            return {}
+        return get_macro_snapshot(self._macro_data, current_date)

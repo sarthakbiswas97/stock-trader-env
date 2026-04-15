@@ -11,3 +11,9 @@ validate-submission.sh
 CLAUDE.md
 notes.md
 work-report.md
+social/
+.progress/
+research.md
+data/ohlcv/
+data/macro/
+data/sft/

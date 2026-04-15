@@ -13,6 +13,7 @@ from openenv.core.env_server.interfaces import Environment
 from models import TradeAction, MarketObservation, TradingState, PositionInfo
 from server.market_simulator import MarketSimulator
 from server.feature_engine import compute_all_features, features_to_text
+from server.macro_data import macro_to_text
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
 
@@ -391,6 +392,12 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
                 )
 
         summary_lines.append("")
+
+        # Macro context (VIX, USD/INR, crude, sectors, RBI rate)
+        macro_snap = sim.get_macro_snapshot_data()
+        if macro_snap:
+            summary_lines.append(macro_to_text(macro_snap))
+            summary_lines.append("")
 
         # Stock data with features
         for sym in config["symbols"]:

@@ -6,3 +6,4 @@ numpy
 pydantic>=2.0
 openai
 httpx
+yfinance
