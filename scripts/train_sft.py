@@ -181,6 +181,7 @@ def train(args: argparse.Namespace) -> None:
         train_dataset=train_ds,
         eval_dataset=val_ds,
         formatting_func=formatting_func,
+        processing_class=tokenizer,
     )
 
     start_time = time.time()
