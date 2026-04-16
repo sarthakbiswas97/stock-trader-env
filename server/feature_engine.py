@@ -130,47 +130,46 @@ def compute_candlestick(df: pd.DataFrame) -> str:
     if len(df) < 2:
         return "none"
 
-    o, h, l, c = (
-        float(df.iloc[-1]["open"]),
-        float(df.iloc[-1]["high"]),
-        float(df.iloc[-1]["low"]),
-        float(df.iloc[-1]["close"]),
-    )
-    o_prev,h_prev, l_prev, c_prev = (
-        float(df.iloc[-2]["open"]),
-        float(df.iloc[-2]["high"]),
-        float(df.iloc[-2]["low"]),
-        float(df.iloc[-2]["close"]),
-    )
+    today_open = float(df.iloc[-1]["open"])
+    today_high = float(df.iloc[-1]["high"])
+    today_low = float(df.iloc[-1]["low"])
+    today_close = float(df.iloc[-1]["close"])
 
-    body = abs(c - o)
-    total_range = h - l
+    prev_open = float(df.iloc[-2]["open"])
+    prev_close = float(df.iloc[-2]["close"])
+
+    body = abs(today_close - today_open)
+    total_range = today_high - today_low
     if total_range == 0:
         return "none"
 
     body_ratio = body / total_range
-    upper_shadow = h - max(o, c)
-    lower_shadow = min(o, c) - l
+    upper_shadow = today_high - max(today_open, today_close)
+    lower_shadow = min(today_open, today_close) - today_low
 
     # Doji: tiny body relative to range
     if body_ratio < 0.1:
         return "doji (indecision)"
 
     # Hammer: small body in upper third, long lower shadow
-    if lower_shadow > 2 * body and upper_shadow < body and c > o:
+    if lower_shadow > 2 * body and upper_shadow < body and today_close > today_open:
         return "hammer (bullish reversal)"
 
     # Inverted hammer / shooting star
-    if upper_shadow > 2 * body and lower_shadow < body and c < o:
+    if upper_shadow > 2 * body and lower_shadow < body and today_close < today_open:
         return "shooting_star (bearish reversal)"
 
     # Bullish engulfing: today's bullish body covers yesterday's bearish body
-    body_prev = abs(c_prev - o_prev)
-    if c > o and c_prev < o_prev and body > body_prev and o <= c_prev and c >= o_prev:
+    prev_body = abs(prev_close - prev_open)
+    is_bullish_today = today_close > today_open
+    was_bearish_prev = prev_close < prev_open
+    if is_bullish_today and was_bearish_prev and body > prev_body and today_open <= prev_close and today_close >= prev_open:
         return "bullish_engulfing (reversal)"
 
     # Bearish engulfing
-    if c < o and c_prev > o_prev and body > body_prev and o >= c_prev and c <= o_prev:
+    is_bearish_today = today_close < today_open
+    was_bullish_prev = prev_close > prev_open
+    if is_bearish_today and was_bullish_prev and body > prev_body and today_open >= prev_close and today_close <= prev_open:
         return "bearish_engulfing (reversal)"
 
     return "none"
