@@ -66,3 +66,19 @@ Actions are strings: `HOLD`, `BUY`, `SELL`, `BUY <SYMBOL>`, `SELL <SYMBOL>`, `BU
 - Regime gate (hard task only): blocks BUY/SELL when market breadth is weak (>70% declining) or avg change < -0.5%
 - Sells always liquidate the entire position in a symbol
 - Session cleanup: sessions are deleted from memory when episodes end (`done=True`) or on server shutdown
+
+## Progress Tracking
+
+Detailed progress is tracked in `.progress/` (gitignored, local only).
+
+**On new session:**
+1. Read `.progress/index.md` first — it has the current status overview
+2. Only read the specific domain file relevant to the current task (e.g., `sft-training.md` if working on SFT)
+3. Never load all domain files at once — read on demand
+
+**After any change:**
+- Update the relevant `.progress/` domain file with: what changed, bugs hit, solutions applied
+- Update the timestamp at the top of the domain file
+- Update `index.md` status line if the overall state changed
+
+**Domain files:** `sft-training.md`, `grpo-training.md`, `environment.md`, `infrastructure.md`, `eval-results.md`

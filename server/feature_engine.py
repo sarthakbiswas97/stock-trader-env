@@ -136,7 +136,7 @@ def compute_candlestick(df: pd.DataFrame) -> str:
         float(df.iloc[-1]["low"]),
         float(df.iloc[-1]["close"]),
     )
-    o_prev, h_prev, l_prev, c_prev = (
+    o_prev,h_prev, l_prev, c_prev = (
         float(df.iloc[-2]["open"]),
         float(df.iloc[-2]["high"]),
         float(df.iloc[-2]["low"]),
