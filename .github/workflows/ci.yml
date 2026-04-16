@@ -36,8 +36,34 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install gymnasium mlflow stable-baselines3
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov datasets
           pip install -e .
+
+      - name: Download market data from HF Hub
+        run: |
+          python -c "
+          from datasets import load_dataset
+          from pathlib import Path
+          import pandas as pd
+
+          ds = load_dataset('sarthakbiswas/stock-trader-market-data')
+
+          ohlcv_dir = Path('data/ohlcv')
+          ohlcv_dir.mkdir(parents=True, exist_ok=True)
+          ohlcv_df = ds['ohlcv'].to_pandas()
+          for symbol, group in ohlcv_df.groupby('symbol'):
+              group = group.drop(columns=['symbol', 'data_type'])
+              group.to_csv(ohlcv_dir / f'{symbol}_daily.csv', index=False)
+
+          macro_dir = Path('data/macro')
+          macro_dir.mkdir(parents=True, exist_ok=True)
+          macro_df = ds['macro'].to_pandas()
+          for name, group in macro_df.groupby('symbol'):
+              group = group.drop(columns=['symbol', 'data_type'])
+              group.to_csv(macro_dir / f'{name}_daily.csv', index=False)
+
+          print(f'Downloaded {len(ohlcv_df.symbol.unique())} stocks + {len(macro_df.symbol.unique())} macro instruments')
+          "
 
       - name: Run tests
         run: PYTHONPATH=. pytest --cov=server --cov=models --cov-report=term-missing --cov-fail-under=80
