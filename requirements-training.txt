@@ -1,0 +1,23 @@
+# Training dependencies for RunPod
+# Install with: pip install -r requirements-training.txt
+
+# Base project deps
+-r requirements.txt
+
+# Core ML
+gymnasium
+mlflow
+datasets
+huggingface_hub
+
+# Unsloth (must install typing_extensions first: pip install -q --upgrade typing_extensions)
+unsloth
+unsloth_zoo
+
+# TRL + GRPO deps
+trl
+mergekit
+llm_blender
+
+# Stable Baselines (PPO baseline)
+stable-baselines3
