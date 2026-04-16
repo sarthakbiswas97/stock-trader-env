@@ -32,10 +32,12 @@ import time
 from collections import Counter
 from pathlib import Path
 
-# Monkey-patch: llm_blender (trl dependency) uses removed TRANSFORMERS_CACHE
+# Monkey-patch: llm_blender (trl dependency) imports TRANSFORMERS_CACHE
+# which was removed in transformers 5.x. Patch before any trl import.
 import transformers.utils.hub as _hub
 if not hasattr(_hub, "TRANSFORMERS_CACHE"):
-    _hub.TRANSFORMERS_CACHE = str(_hub.default_cache_path)
+    from huggingface_hub.constants import HF_HUB_CACHE
+    _hub.TRANSFORMERS_CACHE = HF_HUB_CACHE
 
 import mlflow
 import torch
