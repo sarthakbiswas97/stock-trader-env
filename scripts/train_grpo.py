@@ -98,12 +98,23 @@ def trading_reward(completions: list[str], **kwargs) -> list[float]:
             rewards.append(0.0)
             continue
 
+        # Extract text from completion (may be string or list of message dicts)
+        if isinstance(completion, list):
+            completion_text = ""
+            for msg in completion:
+                if isinstance(msg, dict):
+                    completion_text += msg.get("content", "")
+                else:
+                    completion_text += str(msg)
+        else:
+            completion_text = str(completion)
+
         # Parse action from completion
-        action = parse_action_word(completion)
+        action = parse_action_word(completion_text)
         _action_counter[action] += 1
 
         # Format compliance reward
-        format_ok = is_valid_format(completion)
+        format_ok = is_valid_format(completion_text)
         format_score = 0.0 if format_ok else -1.0
 
         # Counterfactual trading reward
