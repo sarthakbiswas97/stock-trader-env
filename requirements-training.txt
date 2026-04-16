@@ -1,8 +1,11 @@
 # Training dependencies for RunPod
-# Install with: pip install -r requirements-training.txt
+# Install with: pip install --upgrade typing_extensions && pip install -r requirements-training.txt && pip install -e .
 
 # Base project deps
 -r requirements.txt
+
+# Must be upgraded before unsloth/trl
+typing_extensions>=4.12
 
 # Core ML
 gymnasium
@@ -10,11 +13,11 @@ mlflow
 datasets
 huggingface_hub
 
-# Unsloth (must install typing_extensions first: pip install -q --upgrade typing_extensions)
+# Unsloth
 unsloth
 unsloth_zoo
 
-# TRL + GRPO deps (install all optional deps to avoid import chain failures)
+# TRL + GRPO (all optional deps to avoid import chain failures)
 trl[all]
 
 # Stable Baselines (PPO baseline)
