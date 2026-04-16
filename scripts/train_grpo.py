@@ -32,6 +32,11 @@ import time
 from collections import Counter
 from pathlib import Path
 
+# Monkey-patch: llm_blender (trl dependency) uses removed TRANSFORMERS_CACHE
+import transformers.utils.hub as _hub
+if not hasattr(_hub, "TRANSFORMERS_CACHE"):
+    _hub.TRANSFORMERS_CACHE = str(_hub.default_cache_path)
+
 import mlflow
 import torch
 
@@ -48,7 +53,7 @@ DEFAULTS = {
     "prompts_dataset": "",
     "max_seq_length": 1024,
     "max_completion_length": 200,
-    "num_generations": 6,
+    "num_generations": 4,
     "max_steps": 500,
     "batch_size": 1,
     "grad_accum": 8,
