@@ -9,7 +9,6 @@ import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -244,7 +243,6 @@ def get_macro_snapshot(
         snapshot["sectors"] = sectors
         # Determine which sector is leading
         leading = max(sectors, key=sectors.get)
-        lagging = min(sectors, key=sectors.get)
         if sectors[leading] > 0 and leading in ("Bank",):
             snapshot["rotation_signal"] = "cyclicals leading"
         elif sectors[leading] > 0 and leading in ("IT", "Pharma"):
