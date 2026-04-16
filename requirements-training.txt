@@ -17,8 +17,10 @@ huggingface_hub
 unsloth
 unsloth_zoo
 
-# TRL + GRPO (all optional deps to avoid import chain failures)
-trl[all]
+# TRL + GRPO
+trl
+mergekit
+llm_blender
 
 # Stable Baselines (PPO baseline)
 stable-baselines3
