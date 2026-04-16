@@ -362,17 +362,40 @@ RELIANCE: Rs1,250 (-1.5% today)
         if not hf_token:
             logger.warning("HF_TOKEN not set. Skipping push to hub.")
         else:
-            logger.info("Pushing to HF Hub: %s", args.hf_repo)
+            logger.info("Pushing model to HF Hub: %s", args.hf_repo)
             model.push_to_hub(args.hf_repo, token=hf_token)
             tokenizer.push_to_hub(args.hf_repo, token=hf_token)
-            mlflow.log_param("hf_repo", args.hf_repo)
-            logger.info("Pushed to: https://huggingface.co/%s", args.hf_repo)
 
-    mlflow.end_run()
+            # Push MLflow experiment data alongside the model
+            mlflow.end_run()
+            mlruns_dir = "/workspace/mlruns"
+            if os.path.exists(mlruns_dir):
+                import tarfile
+                mlruns_tar = os.path.join(args.output_dir, "mlruns.tar.gz")
+                logger.info("Archiving MLflow data to %s", mlruns_tar)
+                with tarfile.open(mlruns_tar, "w:gz") as tar:
+                    tar.add(mlruns_dir, arcname="mlruns")
+
+                from huggingface_hub import HfApi
+                api = HfApi()
+                api.upload_file(
+                    path_or_fileobj=mlruns_tar,
+                    path_in_repo="mlruns.tar.gz",
+                    repo_id=args.hf_repo,
+                    repo_type="model",
+                    token=hf_token,
+                )
+                logger.info("MLflow data pushed to HF Hub")
+
+            logger.info("Pushed to: https://huggingface.co/%s", args.hf_repo)
+    else:
+        mlflow.end_run()
+
     logger.info("")
     logger.info("=== Done ===")
     logger.info("Checkpoint: %s", args.output_dir)
-    logger.info("MLflow: /workspace/mlruns")
+    if not (args.push_to_hub and args.hf_repo):
+        logger.info("MLflow: /workspace/mlruns (push with --push-to-hub to persist)")
 
 
 def main() -> None:
