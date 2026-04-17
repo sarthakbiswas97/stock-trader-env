@@ -1,14 +1,18 @@
-"""GRPO v2 Training — Multi-dimensional rewards with dynamic scaling.
+"""GRPO v2.1 Training — Reward-aligned with eval grading.
 
-Four reward functions scored independently by TRL's GRPOTrainer:
-  1. format_reward:     Valid <think>...</think>\\nACTION format
-  2. reasoning_reward:  Signal grounding, specificity, reasoning-action consistency
-  3. trading_reward:    Counterfactual P&L with tanh(z) scaling + opportunity cost
-  4. prediction_reward: Directional prediction accuracy from reasoning
+v2 scored 0.326 (barely above HOLD floor 0.300) because 84% of training reward
+came from format/reasoning which contribute 0% to eval. v2.1 fixes this:
 
-All trading rewards scale dynamically with volatility-normalized price changes
-(z-score). No hardcoded reward constants — everything is a function of the
-actual market move magnitude.
+Two reward functions, aligned with eval's grade_single_stock():
+  1. format_gate:    Penalty-only (-1.0 invalid, 0.0 valid). Not a reward source.
+  2. trading_reward: 30% step-level (5D composite, asymmetric) + 70% episode-level return.
+
+Key changes from v2:
+  - Dropped reasoning_reward and prediction_reward (0% eval contribution)
+  - Format is a gate, not a reward (no more gaming format for +1.0)
+  - Trading reward weighted 70% toward episode return (matches eval grading)
+  - Asymmetric penalties: BUY before drop penalized 1.5x vs reward for BUY before rise
+  - Step-level uses 5D composite (1d+2d+5d weighted) instead of 1D only
 
 Temperature decays via cosine schedule (0.9 -> 0.6) using a GRPOTrainer subclass.
 
@@ -17,7 +21,7 @@ Usage:
     pip install -r requirements-training.txt
     pip install -e .
 
-    python scripts/train_grpo.py --prompts-dataset data/grpo/grpo_v2_prompts_train_20000.jsonl
+    python scripts/train_grpo.py --prompts-dataset sarthakbiswas/stock-trader-grpo-prompts-v2.1
 """
 
 from __future__ import annotations
@@ -70,6 +74,16 @@ DEFAULTS = {
 TANH_STEEPNESS = 1.5
 VOL_FLOOR = 0.005
 
+# v2.1: Reward blending weights (step vs episode)
+STEP_WEIGHT = 0.30
+EPISODE_WEIGHT = 0.70
+
+# Asymmetric penalty multiplier for bad trades (BUY before drop, SELL before rise)
+BAD_TRADE_PENALTY = 1.5
+
+# 5D composite weights: how much each horizon contributes to step-level reward
+HORIZON_WEIGHTS = {"1d": 0.2, "2d": 0.3, "5d": 0.5}
+
 
 # ---------------------------------------------------------------------------
 # Text extraction helpers
@@ -108,81 +122,6 @@ def parse_action_word(text: str) -> str:
             if match:
                 return match.group(1)
     return "HOLD"
-
-
-def extract_think_block(text: str) -> str:
-    """Extract content between <think> and </think> tags."""
-    match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
-    return match.group(1).strip() if match else ""
-
-
-# ---------------------------------------------------------------------------
-# Reasoning analysis helpers
-# ---------------------------------------------------------------------------
-
-# Signal patterns that should appear in reasoning when grounded in observation
-_SIGNAL_KEYWORDS = {
-    "rsi": re.compile(r"\bRSI\b", re.IGNORECASE),
-    "macd": re.compile(r"\bMACD\b", re.IGNORECASE),
-    "volume": re.compile(r"\bvolume\b", re.IGNORECASE),
-    "bollinger": re.compile(r"\bbollinger\b", re.IGNORECASE),
-    "trend": re.compile(r"\btrend\b", re.IGNORECASE),
-    "momentum": re.compile(r"\bmomentum\b", re.IGNORECASE),
-    "vix": re.compile(r"\bVIX\b", re.IGNORECASE),
-    "usd_inr": re.compile(r"\bUSD[/\s]*INR\b", re.IGNORECASE),
-    "crude": re.compile(r"\b(?:crude|brent)\b", re.IGNORECASE),
-    "candlestick": re.compile(r"\b(?:doji|hammer|engulfing|shooting.?star|candle)\b", re.IGNORECASE),
-    "gap": re.compile(r"\bgap\b", re.IGNORECASE),
-    "support": re.compile(r"\bsupport\b", re.IGNORECASE),
-    "resistance": re.compile(r"\bresistance\b", re.IGNORECASE),
-}
-
-_BULLISH_WORDS = frozenset({
-    "bullish", "oversold", "upward", "recovery", "buy signal",
-    "entry", "support", "accumulate", "upside", "bounce",
-    "positive", "strength", "breakout",
-})
-
-_BEARISH_WORDS = frozenset({
-    "bearish", "overbought", "downward", "decline", "sell signal",
-    "resistance", "distribute", "downside", "breakdown",
-    "negative", "weakness", "drop",
-})
-
-_LAZY_PHRASES = [
-    "no clear signal", "waiting for confirmation", "mixed signals",
-    "nothing to do", "staying flat", "no setup", "uncertain",
-    "based on the data", "looking at the indicators",
-    "the technical analysis shows", "considering the current situation",
-]
-
-
-def extract_referenced_signals(think_text: str) -> set[str]:
-    """Find which technical signals are referenced in the reasoning."""
-    return {
-        name for name, pattern in _SIGNAL_KEYWORDS.items()
-        if pattern.search(think_text)
-    }
-
-
-def extract_sentiment_from_reasoning(think_text: str) -> str:
-    """Infer directional sentiment from reasoning text."""
-    text_lower = think_text.lower()
-    bull_count = sum(1 for w in _BULLISH_WORDS if w in text_lower)
-    bear_count = sum(1 for w in _BEARISH_WORDS if w in text_lower)
-
-    if bull_count > bear_count + 1:
-        return "bullish"
-    if bear_count > bull_count + 1:
-        return "bearish"
-    return "neutral"
-
-
-def detect_lazy_reasoning(think_text: str) -> bool:
-    """Return True if reasoning is generic without specific data references."""
-    signals = extract_referenced_signals(think_text)
-    has_lazy = any(phrase in think_text.lower() for phrase in _LAZY_PHRASES)
-    return has_lazy and len(signals) < 2
 
 
 # ---------------------------------------------------------------------------
@@ -231,93 +170,115 @@ def _hold_collapse_penalty(action: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Reward Function 1: Format compliance
+# Reward Function 1: Format gate (penalty only)
 # ---------------------------------------------------------------------------
 
 
-def format_reward(completions: list, **kwargs) -> list[float]:
-    """Reward for valid <think>...</think>\\nACTION format.
+def format_gate(completions: list, **kwargs) -> list[float]:
+    """Penalty-only gate for valid <think>...</think>\\nACTION format.
 
-    +1.0 valid format, -1.0 invalid.
+    0.0 for valid format (no reward — format is expected, not rewarded).
+    -1.0 for invalid format (penalty — must learn the format).
+
+    v2 gave +1.0 for valid format, which meant 84% of reward came from
+    format/reasoning and 0% from actual trading. Now format is just a gate.
     """
     rewards = []
     for completion in completions:
         text = extract_completion_text(completion)
-        rewards.append(1.0 if is_valid_format(text) else -1.0)
+        rewards.append(0.0 if is_valid_format(text) else -1.0)
     return rewards
 
 
 # ---------------------------------------------------------------------------
-# Reward Function 2: Reasoning quality
+# Reward Function 2: Trading reward (step-level + episode-level blend)
 # ---------------------------------------------------------------------------
 
 
-def reasoning_reward(completions: list, **kwargs) -> list[float]:
-    """Reward for reasoning quality — grounding, specificity, consistency.
+def _compute_step_reward(
+    action: str,
+    has_pos: bool,
+    cur: float,
+    fwd_prices: dict[str, float],
+    vol: float,
+) -> float:
+    """5D composite step-level reward with asymmetric penalties.
 
-    Components (summed, clamped to [-1, +1]):
-      a) Signal grounding: +0.08 per signal referenced (up to 5), -0.3 if zero
-      b) Specificity: +0.05 per number cited (up to 4)
-      c) Lazy reasoning penalty: -0.3
-      d) Reasoning-action consistency: bullish+BUY=+0.3, bullish+SELL=-0.5
+    Uses weighted combination of 1d/2d/5d horizons instead of 1D only.
+    BUY before drop or SELL before rise penalized at BAD_TRADE_PENALTY rate.
     """
-    rewards = []
-    for completion in completions:
-        text = extract_completion_text(completion)
-        think_text = extract_think_block(text)
-        action = parse_action_word(text)
+    if cur <= 0:
+        return 0.0
 
-        if not think_text:
-            rewards.append(-0.5)
-            continue
+    # Compute z-scores at each horizon
+    z_scores = {}
+    for horizon, price in fwd_prices.items():
+        change = (price - cur) / cur
+        z_scores[horizon] = change / vol
 
-        score = 0.0
+    # Weighted composite z-score across horizons
+    composite_z = sum(
+        z_scores.get(h, 0.0) * w for h, w in HORIZON_WEIGHTS.items()
+    )
+    base = math.tanh(composite_z * TANH_STEEPNESS)
 
-        # (a) Signal grounding
-        signals = extract_referenced_signals(think_text)
-        signal_score = min(len(signals), 5) * 0.08
-        if len(signals) == 0:
-            signal_score = -0.3
-        score += signal_score
+    if action == "BUY" and not has_pos:
+        if composite_z >= 0:
+            # Good BUY: bought before rise
+            return base
+        else:
+            # Bad BUY: bought before drop — asymmetric penalty
+            return base * BAD_TRADE_PENALTY
 
-        # (b) Specificity — numbers in reasoning indicate data-driven thinking
-        numbers = re.findall(r"\d+\.?\d*", think_text)
-        score += min(len(numbers), 4) * 0.05
+    elif action == "SELL" and has_pos:
+        # SELL profit = negative of price movement (sold before drop = good)
+        if composite_z <= 0:
+            # Good SELL: sold before drop
+            return -base  # -base is positive when composite_z < 0
+        else:
+            # Bad SELL: sold before rise — asymmetric penalty
+            return -base * BAD_TRADE_PENALTY
 
-        # (c) Lazy reasoning penalty
-        if detect_lazy_reasoning(think_text):
-            score -= 0.3
+    elif action == "HOLD" and has_pos:
+        # Held through movement — slightly discounted vs active trade
+        return base * 0.7
 
-        # (d) Reasoning-action consistency
-        sentiment = extract_sentiment_from_reasoning(think_text)
-        if sentiment == "bullish" and action == "BUY":
-            score += 0.3
-        elif sentiment == "bearish" and action == "SELL":
-            score += 0.3
-        elif sentiment == "bullish" and action == "SELL":
-            score -= 0.5
-        elif sentiment == "bearish" and action == "BUY":
-            score -= 0.5
+    elif action == "HOLD" and not has_pos:
+        # Opportunity cost (missed rise) or avoided loss (dodged drop)
+        if composite_z > 0:
+            return -abs(base) * 0.5  # missed opportunity
+        else:
+            return abs(base) * 0.3  # avoided loss (smaller reward than active SELL)
 
-        rewards.append(max(-1.0, min(1.0, score)))
-
-    return rewards
+    else:
+        # Invalid: BUY with position or SELL without
+        return -0.3
 
 
-# ---------------------------------------------------------------------------
-# Reward Function 3: Trading P&L + opportunity cost (dynamic, tanh-scaled)
-# ---------------------------------------------------------------------------
+def _compute_episode_reward(episode_return: float) -> float:
+    """Episode-level reward aligned with eval's grade_single_stock().
+
+    Maps episode return to [-1, +1] using the same breakpoints as the grader:
+      - return <= -5%: strongly negative
+      - return ~0%: near zero
+      - return > 0%: positive, scaling with magnitude
+    """
+    # tanh scaling centered at 0 with steepness tuned to trading returns
+    # A 5% episode return maps to ~tanh(5 * 0.4) = tanh(2.0) = 0.96
+    # A -2% episode return maps to ~tanh(-2 * 0.4) = tanh(-0.8) = -0.66
+    return math.tanh(episode_return * 100 * 0.4)
 
 
 def trading_reward(completions: list, **kwargs) -> list[float]:
-    """Counterfactual P&L with volatility-normalized tanh scaling.
+    """Blended trading reward: step-level (30%) + episode-level (70%).
 
-    z = price_change / rolling_vol
-    base = tanh(z * STEEPNESS)     # bounded [-1, +1], scales with move magnitude
+    Step-level: 5D composite counterfactual P&L with asymmetric penalties.
+    Episode-level: Pre-computed episode return from prompt metadata, scaled
+    to align with eval's grade_single_stock() grading function.
 
-    Every scenario produces a non-zero reward proportional to the actual
-    price movement. No hardcoded constants — HOLD is never "safe" when
-    the market moves.
+    The 70/30 blend ensures the model optimizes for what eval actually
+    measures (episode return) while still getting per-step signal for
+    credit assignment.
     """
     current_prices = kwargs.get("current_price", [])
     next_1d = kwargs.get("next_price_1d", [])
@@ -325,6 +286,7 @@ def trading_reward(completions: list, **kwargs) -> list[float]:
     next_5d = kwargs.get("next_price_5d", [])
     has_positions = kwargs.get("has_position", [])
     rolling_vols = kwargs.get("rolling_vol", [])
+    episode_returns = kwargs.get("episode_return", [])
 
     rewards = []
     for i, completion in enumerate(completions):
@@ -335,43 +297,25 @@ def trading_reward(completions: list, **kwargs) -> list[float]:
         _track_action(action)
 
         cur = current_prices[i] if i < len(current_prices) else 0.0
-        nxt = next_1d[i] if i < len(next_1d) else cur
         vol = rolling_vols[i] if i < len(rolling_vols) and rolling_vols[i] > VOL_FLOOR else 0.02
         has_pos = has_positions[i] if i < len(has_positions) else False
 
-        # Volatility-normalized price change
-        price_change = (nxt - cur) / cur if cur > 0 else 0.0
-        z = price_change / vol
-        base = math.tanh(z * TANH_STEEPNESS)
+        # Forward prices for step-level reward
+        fwd_prices = {
+            "1d": next_1d[i] if i < len(next_1d) else cur,
+            "2d": next_2d[i] if i < len(next_2d) else cur,
+            "5d": next_5d[i] if i < len(next_5d) else cur,
+        }
 
-        # Multi-day confirmation amplifier
-        nxt_2d = next_2d[i] if i < len(next_2d) else cur
-        nxt_5d = next_5d[i] if i < len(next_5d) else cur
-        change_2d = (nxt_2d - cur) / cur if cur > 0 else 0.0
-        change_5d = (nxt_5d - cur) / cur if cur > 0 else 0.0
+        # Step-level reward (5D composite, asymmetric)
+        step_reward = _compute_step_reward(action, has_pos, cur, fwd_prices, vol)
 
-        same_direction = (
-            (price_change > 0 and change_2d > 0 and change_5d > 0)
-            or (price_change < 0 and change_2d < 0 and change_5d < 0)
-        )
-        confirmation = 1.2 if same_direction else 0.9
+        # Episode-level reward (from pre-computed metadata)
+        ep_return = episode_returns[i] if i < len(episode_returns) else 0.0
+        episode_reward = _compute_episode_reward(ep_return)
 
-        # Compute reward based on action + market state
-        if action == "BUY" and not has_pos:
-            reward = base * confirmation
-        elif action == "SELL" and has_pos:
-            reward = -base * confirmation  # profit from selling before drop
-        elif action == "HOLD" and has_pos:
-            reward = base * 0.8  # held through gain/loss, slightly less than active trade
-        elif action == "HOLD" and not has_pos:
-            # Dynamic opportunity cost / avoided loss
-            if z > 0:
-                reward = -base * 0.6  # missed opportunity (scales with move)
-            else:
-                reward = math.tanh(abs(z) * TANH_STEEPNESS) * 0.4  # avoided loss
-        else:
-            # Invalid: BUY with position or SELL without
-            reward = -0.3
+        # Blend: 30% step + 70% episode
+        reward = STEP_WEIGHT * step_reward + EPISODE_WEIGHT * episode_reward
 
         # Anti-HOLD collapse penalty
         reward += _hold_collapse_penalty(action)
@@ -384,55 +328,6 @@ def trading_reward(completions: list, **kwargs) -> list[float]:
         dist = {k: f"{v / total * 100:.0f}%" for k, v in _action_counter.most_common()}
         hold_pct = _action_counter.get("HOLD", 0) / total * 100
         logger.info("Actions (%d): %s | HOLD%%=%.1f", total, dist, hold_pct)
-
-    return rewards
-
-
-# ---------------------------------------------------------------------------
-# Reward Function 4: Prediction accuracy
-# ---------------------------------------------------------------------------
-
-
-def prediction_reward(completions: list, **kwargs) -> list[float]:
-    """Reward for directional prediction accuracy from reasoning.
-
-    If reasoning expresses bullish/bearish sentiment, compare against
-    actual next-day direction. Reward scales with z-score magnitude.
-    """
-    current_prices = kwargs.get("current_price", [])
-    next_1d = kwargs.get("next_price_1d", [])
-    rolling_vols = kwargs.get("rolling_vol", [])
-
-    rewards = []
-    for i, completion in enumerate(completions):
-        text = extract_completion_text(completion)
-        think_text = extract_think_block(text)
-        sentiment = extract_sentiment_from_reasoning(think_text)
-
-        if sentiment == "neutral" or not think_text:
-            rewards.append(0.0)
-            continue
-
-        cur = current_prices[i] if i < len(current_prices) else 0.0
-        nxt = next_1d[i] if i < len(next_1d) else cur
-        vol = rolling_vols[i] if i < len(rolling_vols) and rolling_vols[i] > VOL_FLOOR else 0.02
-
-        price_change = (nxt - cur) / cur if cur > 0 else 0.0
-        z = price_change / vol
-        z_magnitude = min(abs(z), 3.0) / 3.0  # normalize to [0, 1]
-
-        actual_direction = "up" if price_change > 0 else "down"
-
-        if sentiment == "bullish" and actual_direction == "up":
-            rewards.append(0.5 * (0.3 + 0.7 * z_magnitude))  # scale with magnitude
-        elif sentiment == "bearish" and actual_direction == "down":
-            rewards.append(0.5 * (0.3 + 0.7 * z_magnitude))
-        elif sentiment == "bullish" and actual_direction == "down":
-            rewards.append(-0.3 * (0.3 + 0.7 * z_magnitude))
-        elif sentiment == "bearish" and actual_direction == "up":
-            rewards.append(-0.3 * (0.3 + 0.7 * z_magnitude))
-        else:
-            rewards.append(0.0)
 
     return rewards
 
@@ -479,12 +374,12 @@ def _create_trainer_class():
 
 
 def train(args: argparse.Namespace) -> None:
-    """Run GRPO v2 training."""
+    """Run GRPO v2.1 training."""
 
     # ------------------------------------------------------------------
     # 1. Environment check
     # ------------------------------------------------------------------
-    logger.info("=== GRPO v2 Training ===")
+    logger.info("=== GRPO v2.1 Training ===")
     logger.info("CUDA: %s", torch.cuda.is_available())
     if torch.cuda.is_available():
         logger.info("GPU: %s", torch.cuda.get_device_name(0))
@@ -557,10 +452,10 @@ def train(args: argparse.Namespace) -> None:
     # 4. MLflow setup
     # ------------------------------------------------------------------
     mlflow.set_tracking_uri("file:///workspace/mlruns")
-    mlflow.set_experiment("grpo-v2-training")
+    mlflow.set_experiment("grpo-v2.1-training")
 
     run_name = (
-        f"grpo-v2-gen{args.num_generations}-lr{args.lr}"
+        f"grpo-v2.1-gen{args.num_generations}-lr{args.lr}"
         f"-steps{args.max_steps}-t{args.t_start}-{args.t_end}"
     )
     mlflow_run = mlflow.start_run(run_name=run_name)
@@ -578,7 +473,11 @@ def train(args: argparse.Namespace) -> None:
         "grad_accum": args.grad_accum,
         "num_prompts": len(train_dataset),
         "tanh_steepness": TANH_STEEPNESS,
-        "reward_functions": "format,reasoning,trading,prediction",
+        "reward_functions": "format_gate,trading",
+        "step_weight": STEP_WEIGHT,
+        "episode_weight": EPISODE_WEIGHT,
+        "bad_trade_penalty": BAD_TRADE_PENALTY,
+        "horizon_weights": str(HORIZON_WEIGHTS),
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none",
     })
 
@@ -620,19 +519,19 @@ def train(args: argparse.Namespace) -> None:
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        reward_funcs=[format_reward, reasoning_reward, trading_reward, prediction_reward],
+        reward_funcs=[format_gate, trading_reward],
         processing_class=tokenizer,
     )
 
     start_time = time.time()
-    logger.info("Starting GRPO v2 training...")
+    logger.info("Starting GRPO v2.1 training...")
     logger.info("  Prompts: %d", len(train_dataset))
     logger.info("  Max steps: %d", args.max_steps)
     logger.info("  Generations per prompt: %d", args.num_generations)
     logger.info("  Temperature: %.2f -> %.2f (cosine)", args.t_start, args.t_end)
     logger.info("  Beta (KL): %.4f", args.beta)
     logger.info("  Learning rate: %.1e", args.lr)
-    logger.info("  Reward functions: format + reasoning + trading + prediction")
+    logger.info("  Reward functions: format_gate + trading (30%% step / 70%% episode)")
     logger.info("  Scale rewards: batch")
     logger.info("  Anti-HOLD collapse: rolling window (%d)", _ACTION_WINDOW_SIZE)
     logger.info("")
@@ -722,7 +621,7 @@ def main() -> None:
     parser.add_argument("--t-end", type=float, default=DEFAULTS["t_end"])
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
     parser.add_argument("--push-to-hub", action="store_true")
-    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v2-model")
+    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v2.1-model")
     args = parser.parse_args()
 
     train(args)

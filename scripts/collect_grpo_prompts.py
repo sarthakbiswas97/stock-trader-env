@@ -1,9 +1,15 @@
-"""Collect GRPO v2 training prompts across all stocks with rich metadata.
+"""Collect GRPO v2.1 training prompts across all stocks with rich metadata.
+
+v2.1 changes from v2:
+  - Adds episode_return metadata to each prompt (heuristic agent's episode P&L)
+  - Trading reward uses 70% episode-level signal, so prompts from profitable
+    episodes get positive episode_return and vice versa.
 
 Iterates over all available stock CSVs, runs episodic simulations with a
 heuristic agent for realistic portfolio states, and stores flat metadata
-(rolling volatility, z-score, regime label, multi-day forward prices)
-that TRL's GRPOTrainer passes directly as kwargs to reward functions.
+(rolling volatility, z-score, regime label, multi-day forward prices,
+episode_return) that TRL's GRPOTrainer passes directly as kwargs to
+reward functions.
 
 Usage:
     PYTHONPATH=. python scripts/collect_grpo_prompts.py
@@ -234,7 +240,15 @@ def collect_prompts_for_stock(
     split_range: tuple[int, int],
     min_z: float,
 ) -> list[dict]:
-    """Run episodic simulations for one stock, collecting prompts with metadata."""
+    """Run episodic simulations for one stock, collecting prompts with metadata.
+
+    Two-pass per episode:
+      1. Run full episode to compute final portfolio value (episode_return)
+      2. Assign episode_return to all prompts from that episode
+
+    This lets the trading_reward blend 70% episode-level signal with 30%
+    step-level signal, aligning training with eval's grade_single_stock().
+    """
     rng = random.Random(seed)
     prompts: list[dict] = []
     closes = df["close"]
@@ -242,44 +256,69 @@ def collect_prompts_for_stock(
 
     for ep in range(n_episodes):
         start_idx = rng.randint(min_start, max_start)
+        episode_id = f"{symbol}_ep{ep}_seed{seed}"
+
+        # --- Pass 1: Run episode to compute episode_return ---
+        cash_sim = float(INITIAL_CAPITAL)
+        position_sim: dict | None = None
+        rng_sim = random.Random(seed + ep * 7919)  # deterministic but separate from prompt rng
+
+        for day in range(EPISODE_DAYS):
+            data_idx = start_idx + LOOKBACK + day
+            lookback_df = df.iloc[data_idx - LOOKBACK : data_idx + 1]
+            features = compute_all_features(lookback_df)
+            price = float(closes.iloc[data_idx])
+            has_pos_sim = position_sim is not None and position_sim["qty"] > 0
+
+            action = agent_fn(features, has_pos_sim, day + 1, rng_sim)
+
+            if action == "BUY" and not has_pos_sim:
+                qty = int(cash_sim * 0.95 / price) if price > 0 else 0
+                if qty > 0:
+                    position_sim = {"qty": qty, "avg_price": price}
+                    cash_sim -= qty * price
+            elif action == "SELL" and has_pos_sim:
+                cash_sim += position_sim["qty"] * price
+                position_sim = None
+
+        # Final portfolio value after episode
+        final_price = float(closes.iloc[start_idx + LOOKBACK + EPISODE_DAYS - 1])
+        pos_value_sim = position_sim["qty"] * final_price if position_sim and position_sim["qty"] > 0 else 0.0
+        final_value = cash_sim + pos_value_sim
+        episode_return = (final_value - INITIAL_CAPITAL) / INITIAL_CAPITAL
+
+        # --- Pass 2: Collect prompts with episode_return attached ---
         cash = float(INITIAL_CAPITAL)
-        position: dict | None = None  # {"qty": int, "avg_price": float}
+        position: dict | None = None
 
         for day in range(EPISODE_DAYS):
             data_idx = start_idx + LOOKBACK + day
 
-            # Compute features from lookback window
             lookback_df = df.iloc[data_idx - LOOKBACK : data_idx + 1]
             features = compute_all_features(lookback_df)
 
-            # Current price and daily change
             price = float(closes.iloc[data_idx])
             prev_price = float(closes.iloc[data_idx - 1])
             daily_change_pct = (price - prev_price) / prev_price * 100
 
-            # Rolling volatility and z-score
             rolling_vol = compute_rolling_volatility(closes, data_idx)
             daily_return = (price - prev_price) / prev_price
             z_score = daily_return / rolling_vol if rolling_vol > 0 else 0.0
             regime = classify_regime(z_score)
 
-            # Forward prices for multi-horizon rewards
             fwd_prices = get_forward_prices(closes, data_idx)
 
-            # Macro context
             macro_snapshot: dict = {}
             if macro_data is not None:
                 row_date = df.iloc[data_idx]["timestamp"]
                 if hasattr(row_date, "date"):
                     macro_snapshot = get_macro_snapshot(macro_data, row_date.date())
 
-            # Portfolio state
             has_position = position is not None and position["qty"] > 0
             pos_value = position["qty"] * price if has_position else 0.0
             portfolio_value = cash + pos_value
             cash_fraction = cash / portfolio_value if portfolio_value > 0 else 1.0
 
-            # Position info for observation
             pos_for_obs = None
             pnl_pct = 0.0
             if has_position:
@@ -290,13 +329,11 @@ def collect_prompts_for_stock(
                     "pnl": pnl_pct,
                 }
 
-            # Build observation (exact env format)
             observation = build_observation(
                 symbol, price, daily_change_pct, features,
                 macro_snapshot, day + 1, cash, portfolio_value, pos_for_obs,
             )
 
-            # Build prompt messages (same format as SFT and eval)
             prompt_messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
@@ -305,7 +342,6 @@ def collect_prompts_for_stock(
                 },
             ]
 
-            # Quality filter: skip uninformative prompts (flat days)
             if abs(z_score) >= min_z:
                 prompts.append({
                     "prompt": prompt_messages,
@@ -325,13 +361,13 @@ def collect_prompts_for_stock(
                     "regime": regime,
                     "day": day + 1,
                     "total_days": EPISODE_DAYS,
-                    "episode_id": f"{symbol}_ep{ep}_seed{seed}",
+                    "episode_id": episode_id,
+                    "episode_return": round(episode_return, 6),
                 })
 
-            # Agent takes action to advance episode state
+            # Agent takes action to advance episode state (same RNG as pass 1)
             action = agent_fn(features, has_position, day + 1, rng)
 
-            # Update portfolio
             if action == "BUY" and not has_position:
                 qty = int(cash * 0.95 / price) if price > 0 else 0
                 if qty > 0:
@@ -410,7 +446,7 @@ def main() -> None:
         return
 
     logger.info(
-        "Collecting GRPO v2 prompts: %d stocks, %d ep/stock, split=%s, min_z=%.2f, agent=%s",
+        "Collecting GRPO v2.1 prompts: %d stocks, %d ep/stock, split=%s, min_z=%.2f, agent=%s",
         len(stocks), args.episodes_per_stock, args.split, args.min_z, args.agent,
     )
 
@@ -489,7 +525,17 @@ def main() -> None:
 
     # Save as JSONL
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / f"grpo_v2_prompts_{args.split}_{len(balanced)}.jsonl"
+    # Log episode return distribution
+    ep_returns = [p["episode_return"] for p in balanced]
+    mean_ep_ret = sum(ep_returns) / len(ep_returns) if ep_returns else 0.0
+    positive_eps = sum(1 for r in ep_returns if r > 0)
+    logger.info(
+        "Episode returns: mean=%.4f, positive=%d/%d (%.1f%%)",
+        mean_ep_ret, positive_eps, len(ep_returns),
+        positive_eps / len(ep_returns) * 100 if ep_returns else 0,
+    )
+
+    output_path = OUTPUT_DIR / f"grpo_v2.1_prompts_{args.split}_{len(balanced)}.jsonl"
 
     with open(output_path, "w") as f:
         for p in balanced:
