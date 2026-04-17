@@ -19,6 +19,7 @@ gymnasium
 mlflow
 datasets
 huggingface_hub
+tqdm
 
 # Unsloth
 unsloth

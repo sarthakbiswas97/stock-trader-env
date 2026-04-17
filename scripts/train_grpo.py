@@ -1,27 +1,33 @@
-"""GRPO v2.1 Training — Reward-aligned with eval grading.
+"""GRPO v3 Training — Hard-example selection + model's own trajectories.
 
-v2 scored 0.326 (barely above HOLD floor 0.300) because 84% of training reward
-came from format/reasoning which contribute 0% to eval. v2.1 fixes this:
+v2.1 scored 0.395 (matched SFT v2) but with high variance (0.1-0.6 bimodal).
+v3 applies findings from Pikus et al. "Hard Examples Are All You Need":
 
-Two reward functions, aligned with eval's grade_single_stock():
+  - Train on model's OWN trajectories (not heuristic agent's)
+  - Filter to hardest prompts via difficulty estimation (learnability scoring)
+  - G=8 (up from 4) for better within-group variance
+  - 1000 steps (up from 500) — paper showed hard examples sustain learning longer
+  - beta=0.04 (up from 0.01) — v2.1 had KL diverge to 3.9
+  - scale_rewards="batch" (Dr. GRPO fix for per-group std explosion)
+
+Pipeline:
+  1. collect_model_episodes.py — run model against env, collect trajectories
+  2. estimate_difficulty.py — probe model, rank by learnability, keep top 35%
+  3. train_grpo.py — GRPO on hard-filtered subset
+
+Same two reward functions as v2.1:
   1. format_gate:    Penalty-only (-1.0 invalid, 0.0 valid). Not a reward source.
   2. trading_reward: 30% step-level (5D composite, asymmetric) + 70% episode-level return.
-
-Key changes from v2:
-  - Dropped reasoning_reward and prediction_reward (0% eval contribution)
-  - Format is a gate, not a reward (no more gaming format for +1.0)
-  - Trading reward weighted 70% toward episode return (matches eval grading)
-  - Asymmetric penalties: BUY before drop penalized 1.5x vs reward for BUY before rise
-  - Step-level uses 5D composite (1d+2d+5d weighted) instead of 1D only
-
-Temperature decays via cosine schedule (0.9 -> 0.6) using a GRPOTrainer subclass.
 
 Usage:
     cd /workspace/stock-trader-env
     pip install -r requirements-training.txt
     pip install -e .
 
-    python scripts/train_grpo.py --prompts-dataset sarthakbiswas/stock-trader-grpo-prompts-v2.1
+    # v3: Train on hard-filtered model trajectories
+    python scripts/train_grpo.py \\
+        --prompts-dataset data/grpo/hard_prompts_1400.jsonl \\
+        --sft-checkpoint sarthakbiswas/stock-trader-grpo-v2.1-model
 """
 
 from __future__ import annotations
@@ -68,19 +74,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "sft_checkpoint": "sarthakbiswas/stock-trader-sft-v2-model",
+    "sft_checkpoint": "sarthakbiswas/stock-trader-grpo-v2.1-model",
     "prompts_dataset": "",
     "max_seq_length": 1024,
     "max_completion_length": 200,
-    "num_generations": 4,
-    "max_steps": 500,
+    "num_generations": 8,       # v3: up from 4 — more within-group variance (Pikus et al.)
+    "max_steps": 1000,          # v3: up from 500 — hard examples sustain learning longer
     "batch_size": 1,
     "grad_accum": 8,
     "lr": 5e-7,
-    "beta": 0.01,
+    "beta": 0.04,               # v3: up from 0.01 — v2.1 had KL diverge to 3.9
     "t_start": 0.9,
     "t_end": 0.6,
-    "output_dir": "/workspace/grpo-checkpoint",
+    "output_dir": "/workspace/grpo-v3-checkpoint",
 }
 
 # Steepness for tanh scaling — controls how quickly rewards saturate
@@ -387,12 +393,12 @@ def _create_trainer_class():
 
 
 def train(args: argparse.Namespace) -> None:
-    """Run GRPO v2.1 training."""
+    """Run GRPO v3 training."""
 
     # ------------------------------------------------------------------
     # 1. Environment check
     # ------------------------------------------------------------------
-    logger.info("=== GRPO v2.1 Training ===")
+    logger.info("=== GRPO v3 Training ===")
     logger.info("CUDA: %s", torch.cuda.is_available())
     if torch.cuda.is_available():
         logger.info("GPU: %s", torch.cuda.get_device_name(0))
@@ -465,11 +471,11 @@ def train(args: argparse.Namespace) -> None:
     # 4. MLflow setup
     # ------------------------------------------------------------------
     mlflow.set_tracking_uri("file:///workspace/mlruns")
-    mlflow.set_experiment("grpo-v2.1-training")
+    mlflow.set_experiment("grpo-v3-training")
 
     run_name = (
-        f"grpo-v2.1-gen{args.num_generations}-lr{args.lr}"
-        f"-steps{args.max_steps}-t{args.t_start}-{args.t_end}"
+        f"grpo-v3-gen{args.num_generations}-lr{args.lr}"
+        f"-steps{args.max_steps}-beta{args.beta}"
     )
     mlflow_run = mlflow.start_run(run_name=run_name)
 
@@ -512,7 +518,7 @@ def train(args: argparse.Namespace) -> None:
         max_steps=args.max_steps,
         logging_steps=5,
         save_strategy="steps",
-        save_steps=100,
+        save_steps=200,
         bf16=True,
         seed=42,
         report_to="mlflow",
@@ -537,15 +543,15 @@ def train(args: argparse.Namespace) -> None:
     )
 
     start_time = time.time()
-    logger.info("Starting GRPO v2.1 training...")
+    logger.info("Starting GRPO v3 training...")
     logger.info("  Prompts: %d", len(train_dataset))
     logger.info("  Max steps: %d", args.max_steps)
     logger.info("  Generations per prompt: %d", args.num_generations)
     logger.info("  Temperature: %.2f -> %.2f (cosine)", args.t_start, args.t_end)
-    logger.info("  Beta (KL): %.4f", args.beta)
     logger.info("  Learning rate: %.1e", args.lr)
+    logger.info("  Beta (KL penalty): %.4f", args.beta)
     logger.info("  Reward functions: format_gate + trading (30%% step / 70%% episode)")
-    logger.info("  Scale rewards: batch")
+    logger.info("  Scale rewards: batch (Dr. GRPO)")
     logger.info("  Anti-HOLD collapse: rolling window (%d)", _ACTION_WINDOW_SIZE)
     logger.info("")
 
@@ -634,7 +640,7 @@ def main() -> None:
     parser.add_argument("--t-end", type=float, default=DEFAULTS["t_end"])
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
     parser.add_argument("--push-to-hub", action="store_true")
-    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v2.1-model")
+    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v3-model")
     args = parser.parse_args()
 
     train(args)
