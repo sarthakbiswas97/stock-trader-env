@@ -33,8 +33,21 @@ import math
 import os
 import re
 import time
+import warnings
 from collections import Counter
 from pathlib import Path
+
+# Suppress noisy logs before any imports trigger them
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, message=".*Unsloth should be imported.*")
+warnings.filterwarnings("ignore", message=".*RequestsDependencyWarning.*")
+warnings.filterwarnings("ignore", message=".*max_new_tokens.*and.*max_length.*")
+os.environ["HTTPX_LOG_LEVEL"] = "WARNING"
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("mlflow").setLevel(logging.WARNING)
 
 # Monkey-patch: llm_blender (trl dependency) imports TRANSFORMERS_CACHE
 # which was removed in transformers 5.x. Patch before any trl import.
