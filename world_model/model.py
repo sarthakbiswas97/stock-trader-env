@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from world_model.data import INPUT_DIM, N_FEATURES, N_PRICE_FEATURES
+from world_model.data import N_FEATURES, N_PRICE_FEATURES
 
 
 
@@ -35,7 +35,6 @@ class WorldModelConfig:
     n_gaussians: int = 3
 
     # Input
-    input_dim: int = INPUT_DIM
     n_features: int = N_FEATURES
     n_price_features: int = N_PRICE_FEATURES
     seq_len: int = 50
@@ -52,7 +51,7 @@ class MarketEncoder(nn.Module):
         super().__init__()
         channels = list(config.encoder_channels)
         layers = []
-        in_channels = config.input_dim
+        in_channels = config.n_features
 
         for out_channels in channels:
             layers.extend([
@@ -83,14 +82,14 @@ class MarketEncoder(nn.Module):
 
 
 class MarketDynamics(nn.Module):
-    """GRU + MDN: (latent, action) → mixture distribution over next-day features."""
+    """GRU + MDN: latent → mixture distribution over next-day features."""
 
     def __init__(self, config: WorldModelConfig):
         super().__init__()
         self.config = config
 
         self.gru = nn.GRU(
-            input_size=config.latent_dim + 1,  # +1 for action
+            input_size=config.latent_dim,
             hidden_size=config.gru_hidden_dim,
             num_layers=config.gru_layers,
             batch_first=True,
@@ -108,16 +107,13 @@ class MarketDynamics(nn.Module):
     def forward(
         self,
         latent: torch.Tensor,
-        action: torch.Tensor,
         hidden: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns (pi, mu, sigma, hidden) — MDN parameters + new GRU state."""
         n_out = self.config.n_price_features
         n_g = self.config.n_gaussians
 
-        # Combine latent + action
-        x = torch.cat([latent, action], dim=-1)
-        x = x.unsqueeze(1)  # (batch, 1, latent_dim + 1)
+        x = latent.unsqueeze(1)  # (batch, 1, latent_dim)
 
         gru_out, hidden = self.gru(x, hidden)
         h = gru_out.squeeze(1)  # (batch, gru_hidden_dim)
@@ -187,17 +183,10 @@ class MarketWorldModel(nn.Module):
     def forward(
         self,
         sequence: torch.Tensor,
-        action: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Training forward: returns (latent, pi, mu, sigma, reconstruction)."""
-        batch_size = sequence.size(0)
-        device = sequence.device
-
-        if action is None:
-            action = torch.zeros(batch_size, 1, device=device)
-
         latent = self.encoder(sequence)
-        pi, mu, sigma, _ = self.dynamics(latent, action)
+        pi, mu, sigma, _ = self.dynamics(latent)
         reconstruction = self.decoder(latent)
 
         return latent, pi, mu, sigma, reconstruction
@@ -205,13 +194,12 @@ class MarketWorldModel(nn.Module):
     def predict_next(
         self,
         sequence: torch.Tensor,
-        action: torch.Tensor,
         hidden: torch.Tensor | None = None,
         temperature: float = 1.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Inference: sample next-day features and return updated hidden state."""
         latent = self.encoder(sequence)
-        pi, mu, sigma, hidden = self.dynamics(latent, action, hidden)
+        pi, mu, sigma, hidden = self.dynamics(latent, hidden)
         next_features = self.dynamics.sample(pi, mu, sigma, temperature)
         return next_features, hidden
 

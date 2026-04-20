@@ -9,6 +9,7 @@ from openenv.core.env_server.interfaces import Environment
 
 from models import TradeAction, MarketObservation, TradingState, PositionInfo
 from server.market_simulator import MarketSimulator
+from server.neural_simulator import NeuralSimulator
 from server.feature_engine import compute_all_features, features_to_text
 from server.macro_data import macro_to_text
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
@@ -103,9 +104,15 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         if task_id not in TASK_CONFIGS:
             task_id = "single_stock"
 
+        simulator_mode = kwargs.get("simulator_mode", "replay")
+
         self._current_task = task_id
         self._task_config = TASK_CONFIGS[task_id]
-        self._sim = MarketSimulator(task_id, seed=seed)
+
+        if simulator_mode == "neural":
+            self._sim = NeuralSimulator(task_id, seed=seed)
+        else:
+            self._sim = MarketSimulator(task_id, seed=seed)
         self._sim.reset()
         self._portfolio = Portfolio(self._task_config["initial_capital"])
         self._done = False

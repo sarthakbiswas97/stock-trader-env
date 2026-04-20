@@ -8,7 +8,6 @@ import pytest
 import torch
 
 from world_model.data import (
-    INPUT_DIM,
     N_FEATURES,
     N_PRICE_FEATURES,
     MarketSequenceDataset,
@@ -116,7 +115,7 @@ class TestMarketSequenceDataset:
     def test_sequence_shape(self, sample_ohlcv):
         dataset = MarketSequenceDataset({"TEST": sample_ohlcv}, seq_len=20)
         seq, target = dataset[0]
-        assert seq.shape == (20, INPUT_DIM)
+        assert seq.shape == (20, N_FEATURES)
         assert target.shape == (N_PRICE_FEATURES,)
 
     def test_skips_short_symbols(self):
@@ -146,7 +145,7 @@ class TestMarketSequenceDataset:
 class TestMarketEncoder:
     def test_output_shape(self, config):
         encoder = MarketEncoder(config)
-        x = torch.randn(4, config.seq_len, config.input_dim)
+        x = torch.randn(4, config.seq_len, config.n_features)
         out = encoder(x)
         assert out.shape == (4, config.latent_dim)
 
@@ -155,8 +154,7 @@ class TestMarketDynamics:
     def test_forward_shapes(self, config):
         dynamics = MarketDynamics(config)
         latent = torch.randn(4, config.latent_dim)
-        action = torch.zeros(4, 1)
-        pi, mu, sigma, hidden = dynamics(latent, action)
+        pi, mu, sigma, hidden = dynamics(latent)
 
         assert pi.shape == (4, config.n_gaussians)
         assert mu.shape == (4, config.n_gaussians, config.n_price_features)
@@ -166,23 +164,20 @@ class TestMarketDynamics:
     def test_pi_sums_to_one(self, config):
         dynamics = MarketDynamics(config)
         latent = torch.randn(4, config.latent_dim)
-        action = torch.zeros(4, 1)
-        pi, _, _, _ = dynamics(latent, action)
+        pi, _, _, _ = dynamics(latent)
         probs = torch.exp(pi)
         assert torch.allclose(probs.sum(dim=-1), torch.ones(4), atol=1e-5)
 
     def test_sigma_positive(self, config):
         dynamics = MarketDynamics(config)
         latent = torch.randn(4, config.latent_dim)
-        action = torch.zeros(4, 1)
-        _, _, sigma, _ = dynamics(latent, action)
+        _, _, sigma, _ = dynamics(latent)
         assert torch.all(sigma > 0)
 
     def test_sample_shape(self, config):
         dynamics = MarketDynamics(config)
         latent = torch.randn(4, config.latent_dim)
-        action = torch.zeros(4, 1)
-        pi, mu, sigma, _ = dynamics(latent, action)
+        pi, mu, sigma, _ = dynamics(latent)
         sample = dynamics.sample(pi, mu, sigma)
         assert sample.shape == (4, config.n_price_features)
 
@@ -197,7 +192,7 @@ class TestMarketDecoder:
 
 class TestMarketWorldModel:
     def test_forward_shapes(self, model, config):
-        seq = torch.randn(4, config.seq_len, config.input_dim)
+        seq = torch.randn(4, config.seq_len, config.n_features)
         latent, pi, mu, sigma, recon = model(seq)
 
         assert latent.shape == (4, config.latent_dim)
@@ -205,26 +200,19 @@ class TestMarketWorldModel:
         assert mu.shape == (4, config.n_gaussians, config.n_price_features)
         assert recon.shape == (4, config.n_features)
 
-    def test_forward_default_action(self, model, config):
-        seq = torch.randn(2, config.seq_len, config.input_dim)
-        latent, pi, mu, sigma, recon = model(seq)
-        assert latent.shape[0] == 2
-
     def test_predict_next(self, model, config):
-        seq = torch.randn(2, config.seq_len, config.input_dim)
-        action = torch.ones(2, 1)
-        features, hidden = model.predict_next(seq, action)
+        seq = torch.randn(2, config.seq_len, config.n_features)
+        features, hidden = model.predict_next(seq)
 
         assert features.shape == (2, config.n_price_features)
         assert hidden.shape == (config.gru_layers, 2, config.gru_hidden_dim)
 
     def test_temperature_affects_variance(self, model, config):
         torch.manual_seed(42)
-        seq = torch.randn(1, config.seq_len, config.input_dim)
-        action = torch.zeros(1, 1)
+        seq = torch.randn(1, config.seq_len, config.n_features)
 
-        samples_low = [model.predict_next(seq, action, temperature=0.1)[0] for _ in range(20)]
-        samples_high = [model.predict_next(seq, action, temperature=2.0)[0] for _ in range(20)]
+        samples_low = [model.predict_next(seq, temperature=0.1)[0] for _ in range(20)]
+        samples_high = [model.predict_next(seq, temperature=2.0)[0] for _ in range(20)]
 
         var_low = torch.stack(samples_low).var(dim=0).mean()
         var_high = torch.stack(samples_high).var(dim=0).mean()
@@ -263,7 +251,7 @@ class TestLossFunctions:
 
     def test_reconstruction_loss_finite(self):
         predicted = torch.randn(4, N_FEATURES)
-        sequence = torch.randn(4, 20, INPUT_DIM)
+        sequence = torch.randn(4, 20, N_FEATURES)
         loss = reconstruction_loss(predicted, sequence)
         assert torch.isfinite(loss)
         assert loss.item() >= 0

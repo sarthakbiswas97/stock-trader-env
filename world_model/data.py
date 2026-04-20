@@ -15,15 +15,10 @@ logger = logging.getLogger(__name__)
 
 OHLCV_DIR = Path(__file__).parent.parent / "data" / "ohlcv"
 
-# Features: open_ret, high_ret, low_ret, close_ret, log_vol_change
-N_PRICE_FEATURES = 5
-# Additional features: intraday_range, body_ratio
-N_DERIVED_FEATURES = 2
+N_PRICE_FEATURES = 5  # open_ret, high_ret, low_ret, close_ret, log_vol_change
+N_DERIVED_FEATURES = 2  # intraday_range, body_ratio
 N_FEATURES = N_PRICE_FEATURES + N_DERIVED_FEATURES
-# Action encoding: BUY=1, SELL=-1, HOLD=0
-N_ACTION_DIM = 1
-# Total input dim per timestep
-INPUT_DIM = N_FEATURES + N_ACTION_DIM
+INPUT_DIM = N_FEATURES
 
 
 @dataclass(frozen=True)
@@ -140,17 +135,9 @@ class MarketSequenceDataset(Dataset):
             if len(features) < seq_len + 1:
                 continue
 
-            # Create sequences with stride
             for i in range(0, len(features) - seq_len, stride):
-                seq = features[i : i + seq_len]
-                target = features[i + seq_len, :N_PRICE_FEATURES]
-
-                # Add action column (zeros for historical — no agent action)
-                action_col = np.zeros((seq_len, N_ACTION_DIM), dtype=np.float32)
-                seq_with_action = np.concatenate([seq, action_col], axis=1)
-
-                self.sequences.append(seq_with_action)
-                self.targets.append(target)
+                self.sequences.append(features[i : i + seq_len])
+                self.targets.append(features[i + seq_len, :N_PRICE_FEATURES])
 
         logger.info(
             f"Created {len(self.sequences)} sequences "
@@ -168,9 +155,7 @@ class MarketSequenceDataset(Dataset):
 
     def compute_stats(self) -> SequenceStats:
         """Compute feature statistics for normalization."""
-        all_features = np.concatenate(
-            [seq[:, :N_FEATURES] for seq in self.sequences], axis=0
-        )
+        all_features = np.concatenate(self.sequences, axis=0)
         return SequenceStats(
             feature_means=all_features.mean(axis=0),
             feature_stds=np.maximum(all_features.std(axis=0), 1e-8),
