@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from server.neural_simulator import CHECKPOINT_DIR, NeuralSimulator
