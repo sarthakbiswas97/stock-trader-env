@@ -15,6 +15,9 @@ from pathlib import Path
 import pandas as pd
 from datasets import Dataset, DatasetDict
 from huggingface_hub import HfApi
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
