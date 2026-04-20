@@ -1,16 +1,4 @@
-"""MLflow experiment tracking — standardized logging for all training runs.
-
-Enforces a consistent schema so every run (PPO, DQN, LLM, rule-based)
-logs the same parameters, metrics, and artifacts. This makes the MLflow
-dashboard comparable across agent types.
-
-Usage:
-    with ExperimentTracker("ppo_baseline", task_id="single_stock") as tracker:
-        for episode in range(100):
-            score, total_return = run_episode(...)
-            tracker.log_episode(score, total_return)
-        tracker.log_model("checkpoints/best.pt")
-"""
+"""MLflow experiment tracking with consistent schema for all training runs."""
 
 from __future__ import annotations
 

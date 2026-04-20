@@ -1,11 +1,6 @@
-"""
-Data contracts for the Stock Trading Environment.
+"""Data contracts for the Stock Trading Environment (OpenEnv-compliant)."""
 
-Defines the Action, Observation, and State types that flow between
-the client (agent) and server (environment).
-
-Inherits from openenv-core base types for protocol compliance.
-"""
+from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 

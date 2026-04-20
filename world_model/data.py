@@ -1,8 +1,4 @@
-"""Data pipeline for training the neural market simulator.
-
-Converts raw OHLCV CSVs into training sequences for the world model.
-Works in returns space for stability (prices vary wildly, returns are bounded).
-"""
+"""Data pipeline: OHLCV CSVs → returns-space training sequences for the world model."""
 
 from __future__ import annotations
 
@@ -32,12 +28,11 @@ INPUT_DIM = N_FEATURES + N_ACTION_DIM
 
 @dataclass(frozen=True)
 class SequenceStats:
-    """Statistics for normalizing sequences."""
+    """Feature statistics for normalization."""
 
     feature_means: np.ndarray
     feature_stds: np.ndarray
     n_sequences: int
-    n_symbols: int
 
 
 def load_all_ohlcv(data_dir: Path | None = None) -> dict[str, pd.DataFrame]:
@@ -57,13 +52,7 @@ def load_all_ohlcv(data_dir: Path | None = None) -> dict[str, pd.DataFrame]:
 
 
 def ohlcv_to_features(df: pd.DataFrame) -> np.ndarray:
-    """Convert OHLCV DataFrame to feature matrix in returns space.
-
-    Returns:
-        Array of shape (n_days - 1, N_FEATURES) with:
-        [open_ret, high_ret, low_ret, close_ret, log_vol_change,
-         intraday_range, body_ratio]
-    """
+    """OHLCV DataFrame → (n_days-1, N_FEATURES) array in returns space."""
     close = df["close"].values
     opn = df["open"].values
     high = df["high"].values
@@ -107,16 +96,7 @@ def features_to_ohlcv(
     prev_close: float,
     prev_volume: float,
 ) -> dict[str, float]:
-    """Reconstruct OHLCV from feature vector and previous day's values.
-
-    Args:
-        features: Array of shape (N_PRICE_FEATURES,) — the first 5 features only.
-        prev_close: Previous day's close price.
-        prev_volume: Previous day's volume.
-
-    Returns:
-        Dict with open, high, low, close, volume.
-    """
+    """Reconstruct OHLCV dict from returns-space features + previous day's values."""
     open_ret, high_ret, low_ret, close_ret, log_vol_change = features[:5]
 
     opn = prev_close * (1 + open_ret)
@@ -143,12 +123,7 @@ def features_to_ohlcv(
 
 
 class MarketSequenceDataset(Dataset):
-    """Dataset of market sequences for training the world model.
-
-    Each sample is a (sequence, target) pair where:
-    - sequence: (seq_len, N_FEATURES + N_ACTION_DIM) — past market features + actions
-    - target: (N_PRICE_FEATURES,) — next day's price features to predict
-    """
+    """(sequence, target) pairs for world model training."""
 
     def __init__(
         self,
@@ -200,5 +175,4 @@ class MarketSequenceDataset(Dataset):
             feature_means=all_features.mean(axis=0),
             feature_stds=np.maximum(all_features.std(axis=0), 1e-8),
             n_sequences=len(self.sequences),
-            n_symbols=0,
         )

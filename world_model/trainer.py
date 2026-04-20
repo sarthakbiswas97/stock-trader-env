@@ -1,11 +1,4 @@
-"""Training loop for the neural market world model.
-
-Trains the V-M encoder + dynamics (GRU+MDN) + decoder on historical
-OHLCV data. Optimizes MDN loss (next-day prediction) + reconstruction
-loss (autoencoder regularization).
-
-Can train on Mac MPS (~1 hour for 50 epochs on 97 stocks).
-"""
+"""Training loop for the neural market world model."""
 
 from __future__ import annotations
 
@@ -56,22 +49,7 @@ def train_world_model(
     checkpoint_dir: Path | None = None,
     seed: int = 42,
 ) -> tuple[MarketWorldModel, dict]:
-    """Train the world model on historical OHLCV data.
-
-    Args:
-        data_dir: Path to OHLCV CSVs. Defaults to data/ohlcv/.
-        config: Model configuration. Defaults to WorldModelConfig().
-        epochs: Number of training epochs.
-        batch_size: Training batch size.
-        lr: Learning rate.
-        val_split: Fraction of data for validation.
-        recon_weight: Weight for reconstruction loss.
-        checkpoint_dir: Where to save checkpoints.
-        seed: Random seed for reproducibility.
-
-    Returns:
-        Trained model and training history dict.
-    """
+    """Train the world model on historical OHLCV data. Returns (model, history)."""
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -245,11 +223,7 @@ def load_world_model(
     checkpoint_path: Path | None = None,
     device: torch.device | None = None,
 ) -> tuple[MarketWorldModel, dict]:
-    """Load a trained world model from checkpoint.
-
-    Returns:
-        (model, metadata) tuple.
-    """
+    """Load a trained world model from checkpoint."""
     checkpoint_path = checkpoint_path or CHECKPOINT_DIR / "best_model.pt"
     device = device or get_device()
 

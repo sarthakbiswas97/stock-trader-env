@@ -1,9 +1,6 @@
-"""
-Stock Trading Environment — core OpenEnv implementation.
+"""Stock Trading Environment — core OpenEnv implementation."""
 
-Simulates daily stock trading on Indian equity markets using real historical data.
-Supports 3 difficulty levels with progressively complex constraints.
-"""
+from __future__ import annotations
 
 import uuid
 from typing import Any, Optional
@@ -407,7 +404,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
                 price = prices[sym]
                 change = sim.get_daily_change(sym)
                 summary_lines.append(features_to_text(sym, price, change, features))
-            except Exception:
+            except (IndexError, KeyError, ValueError):
                 summary_lines.append(f"{sym}: Data unavailable")
 
         # Position summary

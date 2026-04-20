@@ -1,16 +1,4 @@
-"""Gymnasium-compatible wrapper for the Stock Trading Environment.
-
-Wraps StockTradingEnvironment with the standard Gym interface so that
-RL libraries (Stable-Baselines3, trl, custom loops) can use it directly.
-
-Calls the environment's Python API directly — no HTTP, no server overhead.
-This makes training 10-50x faster than going through the REST API.
-
-Usage:
-    env = StockTradingGymEnv(task_id="single_stock", seed=42, obs_mode="text")
-    obs, info = env.reset()
-    obs, reward, terminated, truncated, info = env.step("BUY RELIANCE")
-"""
+"""Gymnasium-compatible wrapper for the Stock Trading Environment."""
 
 from __future__ import annotations
 

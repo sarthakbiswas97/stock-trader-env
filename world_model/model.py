@@ -1,16 +1,8 @@
-"""Neural market dynamics model — V-M-C architecture.
+"""Neural market dynamics model (V-M-C architecture).
 
-Vision (Encoder): Sequence of OHLCV features → latent vector
-Memory (Dynamics): GRU that maintains hidden state, predicts next latent
-Decoder: Latent → predicted OHLCV features (returns space)
-
-The model learns market dynamics from historical data and generates
-realistic, stochastic market sequences. Agent actions are an input,
-so the model learns market impact implicitly.
-
-Inspired by Ha & Schmidhuber's World Models, adapted for financial
-time series with Mixture Density Network output for multi-modal
-regime transitions.
+Encoder: OHLCV sequence → latent vector
+Dynamics: GRU + MDN predicting next-day distribution (3 Gaussian mixture)
+Decoder: latent → reconstructed features (training regularization)
 """
 
 from __future__ import annotations
@@ -25,9 +17,6 @@ import torch.nn.functional as F
 from world_model.data import INPUT_DIM, N_FEATURES, N_PRICE_FEATURES
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class WorldModelConfig:
@@ -55,16 +44,9 @@ class WorldModelConfig:
     dropout: float = 0.1
 
 
-# ---------------------------------------------------------------------------
-# Encoder (V) — Sequence → Latent
-# ---------------------------------------------------------------------------
 
 class MarketEncoder(nn.Module):
-    """1D-CNN encoder that compresses a sequence of market features into a latent vector.
-
-    Input: (batch, seq_len, input_dim)
-    Output: (batch, latent_dim)
-    """
+    """1D-CNN encoder: (batch, seq_len, input_dim) → (batch, latent_dim)."""
 
     def __init__(self, config: WorldModelConfig):
         super().__init__()
@@ -91,13 +73,6 @@ class MarketEncoder(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Encode sequence to latent vector.
-
-        Args:
-            x: (batch, seq_len, input_dim)
-        Returns:
-            (batch, latent_dim)
-        """
         # Conv1d expects (batch, channels, length)
         h = x.transpose(1, 2)
         h = self.conv(h)
@@ -106,20 +81,9 @@ class MarketEncoder(nn.Module):
         return self.fc(h)
 
 
-# ---------------------------------------------------------------------------
-# Dynamics (M) — GRU + MDN
-# ---------------------------------------------------------------------------
 
 class MarketDynamics(nn.Module):
-    """GRU-based dynamics model with Mixture Density Network output.
-
-    Takes the latent state and produces parameters for a mixture of
-    Gaussians over the next day's market features. This captures
-    multi-modal market behavior (bull/bear/sideways regimes).
-
-    Input: (batch, latent_dim + action_dim)
-    Output: MDN parameters (pi, mu, sigma) for n_gaussians components
-    """
+    """GRU + MDN: (latent, action) → mixture distribution over next-day features."""
 
     def __init__(self, config: WorldModelConfig):
         super().__init__()
@@ -147,19 +111,7 @@ class MarketDynamics(nn.Module):
         action: torch.Tensor,
         hidden: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Predict next state distribution.
-
-        Args:
-            latent: (batch, latent_dim)
-            action: (batch, 1) — encoded action
-            hidden: (n_layers, batch, gru_hidden_dim) or None
-
-        Returns:
-            pi: (batch, n_gaussians) — mixture weights (log-softmax)
-            mu: (batch, n_gaussians, n_price_features) — means
-            sigma: (batch, n_gaussians, n_price_features) — std devs
-            hidden: (n_layers, batch, gru_hidden_dim) — new hidden state
-        """
+        """Returns (pi, mu, sigma, hidden) — MDN parameters + new GRU state."""
         n_out = self.config.n_price_features
         n_g = self.config.n_gaussians
 
@@ -186,17 +138,7 @@ class MarketDynamics(nn.Module):
         sigma: torch.Tensor,
         temperature: float = 1.0,
     ) -> torch.Tensor:
-        """Sample from the mixture distribution.
-
-        Args:
-            pi: (batch, n_gaussians) — log mixture weights
-            mu: (batch, n_gaussians, n_features) — means
-            sigma: (batch, n_gaussians, n_features) — std devs
-            temperature: Sampling temperature (higher = more random)
-
-        Returns:
-            (batch, n_features) — sampled next-day features
-        """
+        """Sample next-day features from the MDN mixture distribution."""
         # Select mixture component
         pi_temp = pi / temperature
         pi_probs = torch.softmax(pi_temp, dim=-1)
@@ -212,17 +154,9 @@ class MarketDynamics(nn.Module):
         return selected_mu + selected_sigma * eps
 
 
-# ---------------------------------------------------------------------------
-# Decoder — Latent → Features (for reconstructing full feature vector)
-# ---------------------------------------------------------------------------
 
 class MarketDecoder(nn.Module):
-    """Decodes latent vector back to full feature vector.
-
-    Used for reconstruction loss during training.
-    At inference time, we use MDN samples directly for price features
-    and this decoder for derived features.
-    """
+    """Decoder: latent → full feature vector (reconstruction regularization)."""
 
     def __init__(self, config: WorldModelConfig):
         super().__init__()
@@ -236,31 +170,12 @@ class MarketDecoder(nn.Module):
         )
 
     def forward(self, latent: torch.Tensor) -> torch.Tensor:
-        """Decode latent to feature vector.
-
-        Args:
-            latent: (batch, latent_dim)
-        Returns:
-            (batch, n_features)
-        """
         return self.net(latent)
 
 
-# ---------------------------------------------------------------------------
-# Full World Model
-# ---------------------------------------------------------------------------
 
 class MarketWorldModel(nn.Module):
-    """Complete V-M-C world model for market dynamics.
-
-    Combines encoder, dynamics (GRU+MDN), and decoder into a single
-    model that can:
-    1. Encode a market history into a latent state
-    2. Predict the next day's market distribution given an action
-    3. Sample realistic next-day OHLCV features
-
-    Total params: ~900K-1.2M depending on config.
-    """
+    """Complete V-M-C world model for market dynamics (~140K params)."""
 
     def __init__(self, config: WorldModelConfig | None = None):
         super().__init__()
@@ -274,17 +189,7 @@ class MarketWorldModel(nn.Module):
         sequence: torch.Tensor,
         action: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Forward pass for training.
-
-        Args:
-            sequence: (batch, seq_len, input_dim) — market history
-            action: (batch, 1) — action for next step. Defaults to 0 (HOLD).
-
-        Returns:
-            latent: (batch, latent_dim) — encoded state
-            pi, mu, sigma: MDN parameters for next-day prediction
-            reconstruction: (batch, n_features) — decoded features
-        """
+        """Training forward: returns (latent, pi, mu, sigma, reconstruction)."""
         batch_size = sequence.size(0)
         device = sequence.device
 
@@ -304,18 +209,7 @@ class MarketWorldModel(nn.Module):
         hidden: torch.Tensor | None = None,
         temperature: float = 1.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Predict and sample next day's features.
-
-        Args:
-            sequence: (batch, seq_len, input_dim) — market history
-            action: (batch, 1) — agent's action
-            hidden: GRU hidden state (for sequential generation)
-            temperature: Sampling temperature
-
-        Returns:
-            next_features: (batch, n_price_features) — sampled next-day features
-            hidden: Updated GRU hidden state
-        """
+        """Inference: sample next-day features and return updated hidden state."""
         latent = self.encoder(sequence)
         pi, mu, sigma, hidden = self.dynamics(latent, action, hidden)
         next_features = self.dynamics.sample(pi, mu, sigma, temperature)
@@ -326,9 +220,6 @@ class MarketWorldModel(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-# ---------------------------------------------------------------------------
-# Loss functions
-# ---------------------------------------------------------------------------
 
 def mdn_loss(
     pi: torch.Tensor,
@@ -336,14 +227,7 @@ def mdn_loss(
     sigma: torch.Tensor,
     target: torch.Tensor,
 ) -> torch.Tensor:
-    """Negative log-likelihood loss for Mixture Density Network.
-
-    Args:
-        pi: (batch, n_gaussians) — log mixture weights
-        mu: (batch, n_gaussians, n_features) — means
-        sigma: (batch, n_gaussians, n_features) — std devs
-        target: (batch, n_features) — true next-day features
-    """
+    """Negative log-likelihood for the Gaussian mixture."""
     target = target.unsqueeze(1)  # (batch, 1, n_features)
 
     # Log probability for each Gaussian component
@@ -365,11 +249,6 @@ def reconstruction_loss(
     predicted: torch.Tensor,
     sequence: torch.Tensor,
 ) -> torch.Tensor:
-    """MSE reconstruction loss on the last timestep's features.
-
-    Args:
-        predicted: (batch, n_features) — decoder output
-        sequence: (batch, seq_len, input_dim) — input sequence
-    """
+    """MSE between decoder output and last timestep's features."""
     target = sequence[:, -1, :N_FEATURES]
     return F.mse_loss(predicted, target)

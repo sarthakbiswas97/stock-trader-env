@@ -1,20 +1,4 @@
-"""Standardized evaluation harness — run N episodes and aggregate metrics.
-
-Every agent type gets evaluated the same way. Results are logged to MLflow.
-
-Usage:
-    from training.evaluate import evaluate_agent
-
-    results = evaluate_agent(
-        agent_fn=my_agent,       # callable: observation -> action string
-        task_id="single_stock",
-        split="test",
-        n_episodes=50,
-        seed=42,
-    )
-    print(results)
-    # {"mean_score": 0.62, "std_score": 0.08, "mean_return": 0.03, ...}
-"""
+"""Standardized evaluation harness — run N episodes and aggregate metrics."""
 
 from __future__ import annotations
 
@@ -53,21 +37,7 @@ def evaluate_agent(
     agent_name: str = "unnamed",
     log_to_mlflow: bool = True,
 ) -> EvalResults:
-    """Run agent through N episodes and return aggregate metrics.
-
-    Args:
-        agent_fn: Takes an observation string, returns an action string.
-                  Example: lambda obs: "HOLD"
-        task_id: Which task to evaluate on.
-        split: Data split ("train", "val", "test").
-        n_episodes: Number of episodes to run.
-        seed: Base seed. Each episode uses seed + episode_index.
-        agent_name: Name for MLflow logging.
-        log_to_mlflow: Whether to log results to MLflow.
-
-    Returns:
-        EvalResults with aggregate metrics.
-    """
+    """Run agent through N episodes and return aggregate EvalResults."""
     scores: list[float] = []
     returns: list[float] = []
 
