@@ -1,0 +1,5 @@
+[run]
+omit =
+    server/neural_simulator.py
+    world_model/trainer.py
+    scripts/*

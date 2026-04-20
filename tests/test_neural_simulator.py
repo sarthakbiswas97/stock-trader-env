@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from server.neural_simulator import NeuralSimulator
+from server.neural_simulator import CHECKPOINT_DIR, NeuralSimulator
+
+_has_checkpoint = any(
+    (CHECKPOINT_DIR / name).exists()
+    for name in ["best_transformer.pt", "best_cnn-gru.pt", "best_model.pt"]
+)
+
+pytestmark = pytest.mark.skipif(not _has_checkpoint, reason="No world model checkpoint available")
 
 
 @pytest.fixture
