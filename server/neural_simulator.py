@@ -45,7 +45,7 @@ class NeuralSimulator:
         self,
         task_id: str,
         seed: int | None = None,
-        temperature: float = 0.8,
+        temperature: float = 0.3,
         checkpoint_path: Path | None = None,
     ):
         self.task_id = task_id
@@ -116,6 +116,9 @@ class NeuralSimulator:
                 tensor = torch.from_numpy(input_seq).unsqueeze(0).to(self._device)
                 predicted, _ = self._model.predict_next(tensor, temperature=self.temperature)
                 day_features = predicted.squeeze(0).cpu().numpy()
+
+                # Clip to realistic daily move bounds (±10% max)
+                day_features = np.clip(day_features, -0.10, 0.10)
 
                 ohlcv = features_to_ohlcv(day_features, last_close, last_volume)
                 ohlcv["timestamp"] = last_timestamp + pd.Timedelta(days=day + 1)

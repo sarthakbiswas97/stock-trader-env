@@ -21,6 +21,7 @@ social/
 .progress/
 notebooks/
 checkpoints/
+results/
 data/ohlcv/
 data/macro/
 data/sft/
