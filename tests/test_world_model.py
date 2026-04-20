@@ -15,10 +15,12 @@ from world_model.data import (
     ohlcv_to_features,
 )
 from world_model.model import (
+    CausalTransformerWorldModel,
     MarketDecoder,
     MarketDynamics,
     MarketEncoder,
     MarketWorldModel,
+    TransformerConfig,
     WorldModelConfig,
     mdn_loss,
     reconstruction_loss,
@@ -255,3 +257,52 @@ class TestLossFunctions:
         loss = reconstruction_loss(predicted, sequence)
         assert torch.isfinite(loss)
         assert loss.item() >= 0
+
+    def test_mdn_loss_causal_shape(self):
+        """MDN loss works with multi-position (causal) output."""
+        pi = torch.log_softmax(torch.randn(4, 20, 3), dim=-1)
+        mu = torch.randn(4, 20, 3, 5)
+        sigma = torch.ones(4, 20, 3, 5) * 0.1
+        target = torch.randn(4, 20, 5)
+        loss = mdn_loss(pi, mu, sigma, target)
+        assert torch.isfinite(loss)
+
+
+class TestCausalTransformer:
+    @pytest.fixture
+    def t_config(self):
+        return TransformerConfig(seq_len=20)
+
+    @pytest.fixture
+    def t_model(self, t_config):
+        return CausalTransformerWorldModel(t_config)
+
+    def test_forward_shapes(self, t_model, t_config):
+        seq = torch.randn(2, t_config.seq_len, t_config.n_features)
+        pi, mu, sigma = t_model(seq)
+        assert pi.shape == (2, t_config.seq_len, t_config.n_gaussians)
+        assert mu.shape == (2, t_config.seq_len, t_config.n_gaussians, t_config.n_price_features)
+        assert sigma.shape == (2, t_config.seq_len, t_config.n_gaussians, t_config.n_price_features)
+
+    def test_predict_next(self, t_model, t_config):
+        seq = torch.randn(2, t_config.seq_len, t_config.n_features)
+        features, hidden = t_model.predict_next(seq)
+        assert features.shape == (2, t_config.n_price_features)
+        assert hidden is None
+
+    def test_causal_masking(self, t_model, t_config):
+        """Changing future tokens should not affect past predictions."""
+        t_model.eval()
+        seq1 = torch.randn(1, t_config.seq_len, t_config.n_features)
+        seq2 = seq1.clone()
+        seq2[0, -1, :] = 999.0
+
+        with torch.no_grad():
+            pi1, _, _ = t_model(seq1)
+            pi2, _, _ = t_model(seq2)
+
+        assert torch.allclose(pi1[0, 0], pi2[0, 0], atol=1e-4)
+
+    def test_param_count(self, t_model):
+        n = t_model.count_parameters()
+        assert 500_000 < n < 2_000_000

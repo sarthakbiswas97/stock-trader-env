@@ -118,12 +118,12 @@ def features_to_ohlcv(
 
 
 class MarketSequenceDataset(Dataset):
-    """(sequence, target) pairs for world model training."""
+    """(sequence, target) pairs for single-step CNN+GRU training."""
 
     def __init__(
         self,
         symbols_data: dict[str, pd.DataFrame],
-        seq_len: int = 50,
+        seq_len: int = 100,
         stride: int = 1,
     ):
         self.seq_len = seq_len
@@ -160,4 +160,45 @@ class MarketSequenceDataset(Dataset):
             feature_means=all_features.mean(axis=0),
             feature_stds=np.maximum(all_features.std(axis=0), 1e-8),
             n_sequences=len(self.sequences),
+        )
+
+
+class CausalSequenceDataset(Dataset):
+    """Sequences with per-position targets for causal transformer training.
+
+    Each position t predicts the features at position t+1.
+    Returns (sequence, targets) where targets has shape (seq_len, N_PRICE_FEATURES).
+    """
+
+    def __init__(
+        self,
+        symbols_data: dict[str, pd.DataFrame],
+        seq_len: int = 100,
+        stride: int = 3,
+    ):
+        self.seq_len = seq_len
+        self.sequences: list[np.ndarray] = []
+        self.targets: list[np.ndarray] = []
+
+        for symbol, df in symbols_data.items():
+            features = ohlcv_to_features(df)
+            if len(features) < seq_len + 1:
+                continue
+
+            for i in range(0, len(features) - seq_len, stride):
+                self.sequences.append(features[i : i + seq_len])
+                self.targets.append(features[i + 1 : i + seq_len + 1, :N_PRICE_FEATURES])
+
+        logger.info(
+            f"Created {len(self.sequences)} causal sequences "
+            f"from {len(symbols_data)} symbols (seq_len={seq_len}, stride={stride})"
+        )
+
+    def __len__(self) -> int:
+        return len(self.sequences)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return (
+            torch.from_numpy(self.sequences[idx]),
+            torch.from_numpy(self.targets[idx]),
         )

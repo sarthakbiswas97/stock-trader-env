@@ -1,8 +1,8 @@
-"""Neural market dynamics model (V-M-C architecture).
+"""Neural market dynamics models.
 
-Encoder: OHLCV sequence → latent vector
-Dynamics: GRU + MDN predicting next-day distribution (3 Gaussian mixture)
-Decoder: latent → reconstructed features (training regularization)
+Two architectures for comparison:
+- MarketWorldModel: CNN encoder + GRU dynamics + MDN (140K-500K params)
+- CausalTransformerWorldModel: Causal transformer + MDN (~1.2M params)
 """
 
 from __future__ import annotations
@@ -209,25 +209,164 @@ class MarketWorldModel(nn.Module):
 
 
 
+@dataclass(frozen=True)
+class TransformerConfig:
+    """Configuration for the causal transformer world model."""
+
+    d_model: int = 192
+    n_heads: int = 4
+    n_layers: int = 4
+    ff_dim: int = 384
+    n_features: int = N_FEATURES
+    n_price_features: int = N_PRICE_FEATURES
+    n_gaussians: int = 3
+    seq_len: int = 100
+    max_seq_len: int = 120
+    dropout: float = 0.15
+    attn_dropout: float = 0.1
+
+
+class MDNHead(nn.Module):
+    """Shared MDN output head for both architectures."""
+
+    def __init__(self, input_dim: int, n_price_features: int, n_gaussians: int):
+        super().__init__()
+        self.n_price_features = n_price_features
+        self.n_gaussians = n_gaussians
+        self.pi_head = nn.Linear(input_dim, n_gaussians)
+        self.mu_head = nn.Linear(input_dim, n_gaussians * n_price_features)
+        self.log_sigma_head = nn.Linear(input_dim, n_gaussians * n_price_features)
+
+    def forward(
+        self, h: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Returns (pi, mu, sigma) from hidden state."""
+        n_g = self.n_gaussians
+        n_out = self.n_price_features
+
+        pi = F.log_softmax(self.pi_head(h), dim=-1)
+        mu = self.mu_head(h).view(*h.shape[:-1], n_g, n_out)
+        sigma = torch.exp(self.log_sigma_head(h)).view(*h.shape[:-1], n_g, n_out)
+        sigma = torch.clamp(sigma, min=1e-6, max=0.5)
+        return pi, mu, sigma
+
+    def sample(
+        self,
+        pi: torch.Tensor,
+        mu: torch.Tensor,
+        sigma: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> torch.Tensor:
+        """Sample from the MDN mixture distribution."""
+        pi_probs = torch.softmax(pi / temperature, dim=-1)
+        component = torch.multinomial(pi_probs, 1).squeeze(-1)
+        batch_idx = torch.arange(mu.size(0), device=mu.device)
+        selected_mu = mu[batch_idx, component]
+        selected_sigma = sigma[batch_idx, component]
+        eps = torch.randn_like(selected_mu) * temperature
+        return selected_mu + selected_sigma * eps
+
+
+class CausalTransformerWorldModel(nn.Module):
+    """Causal transformer for market dynamics (~1.2M params).
+
+    Training matches inference: causal mask means each position predicts
+    the next day from only past data. Supports multi-position loss and
+    scheduled sampling for autoregressive robustness.
+    """
+
+    def __init__(self, config: TransformerConfig | None = None):
+        super().__init__()
+        self.config = config or TransformerConfig()
+        c = self.config
+
+        self.causal_pad = nn.ConstantPad1d((2, 0), 0.0)  # left-pad only
+        self.input_conv = nn.Conv1d(c.n_features, c.d_model, kernel_size=3)
+        self.input_act = nn.GELU()
+        self.input_norm = nn.LayerNorm(c.d_model)
+        self.pos_embedding = nn.Embedding(c.max_seq_len, c.d_model)
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=c.d_model,
+            nhead=c.n_heads,
+            dim_feedforward=c.ff_dim,
+            dropout=c.dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=c.n_layers)
+        self.final_norm = nn.LayerNorm(c.d_model)
+        self.mdn = MDNHead(c.d_model, c.n_price_features, c.n_gaussians)
+
+    def _causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+        mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1)
+        return mask.masked_fill(mask == 1, float("-inf"))
+
+    def forward(
+        self, sequence: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Forward pass with causal masking. Returns (pi, mu, sigma) at all positions."""
+        b, s, _ = sequence.shape
+
+        h = self.causal_pad(sequence.transpose(1, 2))
+        h = self.input_act(self.input_conv(h)).transpose(1, 2)
+        h = self.input_norm(h)
+
+        positions = torch.arange(s, device=sequence.device)
+        h = h + self.pos_embedding(positions)
+
+        mask = self._causal_mask(s, sequence.device)
+        h = self.transformer(h, mask=mask)
+        h = self.final_norm(h)
+
+        pi, mu, sigma = self.mdn(h)
+        return pi, mu, sigma
+
+    def predict_next(
+        self,
+        sequence: torch.Tensor,
+        hidden: torch.Tensor | None = None,
+        temperature: float = 1.0,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Inference: predict next day from sequence. Returns (features, None).
+
+        hidden is unused (kept for interface compatibility with CNN+GRU model).
+        """
+        pi, mu, sigma = self.forward(sequence)
+        # Use last position's prediction
+        pi_last = pi[:, -1]
+        mu_last = mu[:, -1]
+        sigma_last = sigma[:, -1]
+        next_features = self.mdn.sample(pi_last, mu_last, sigma_last, temperature)
+        return next_features, None
+
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
 def mdn_loss(
     pi: torch.Tensor,
     mu: torch.Tensor,
     sigma: torch.Tensor,
     target: torch.Tensor,
 ) -> torch.Tensor:
-    """Negative log-likelihood for the Gaussian mixture."""
-    target = target.unsqueeze(1)  # (batch, 1, n_features)
+    """Negative log-likelihood for the Gaussian mixture.
 
-    # Log probability for each Gaussian component
+    Supports both (batch, n_gaussians, n_features) and
+    (batch, seq_len, n_gaussians, n_features) shapes.
+    """
+    if target.dim() == pi.dim() - 1:
+        target = target.unsqueeze(-2)
+    elif target.dim() == pi.dim():
+        target = target.unsqueeze(-2)
+
     log_probs = -0.5 * (
         math.log(2 * math.pi)
         + 2 * torch.log(sigma)
         + ((target - mu) / sigma) ** 2
     )
-    # Sum over features, add mixture weight
-    log_component_probs = log_probs.sum(dim=-1) + pi  # (batch, n_gaussians)
-
-    # Log-sum-exp over components
+    log_component_probs = log_probs.sum(dim=-1) + pi
     log_likelihood = torch.logsumexp(log_component_probs, dim=-1)
 
     return -log_likelihood.mean()

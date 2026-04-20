@@ -113,11 +113,18 @@ def fine_tune_autoregressive(
                 _, pi, mu, sigma, _ = model(current)
                 losses.append(mdn_loss(pi, mu, sigma, target))
 
-                # Autoregressive: feed model's own prediction back
+                # Autoregressive: feed model's own prediction with derived features
                 with torch.no_grad():
                     predicted = model.dynamics.sample(pi, mu, sigma, temperature=0.3)
+                p = predicted[0]
+                intraday_range = max(float(p[1] - p[2]), 0.001)
+                body = abs(float(p[3] - p[0]))
+                body_ratio = min(body / intraday_range, 0.5)
+
                 new_feat = torch.zeros(1, 1, N_FEATURES, device=device)
-                new_feat[0, 0, :N_PRICE_FEATURES] = predicted[0]
+                new_feat[0, 0, :N_PRICE_FEATURES] = p
+                new_feat[0, 0, N_PRICE_FEATURES] = intraday_range
+                new_feat[0, 0, N_PRICE_FEATURES + 1] = body_ratio
                 current = torch.cat([current[:, 1:, :], new_feat], dim=1)
 
             if losses:

@@ -26,13 +26,51 @@ from server.market_simulator import (
     TASK_STOCKS,
     _load_stock_data,
 )
-from world_model.data import N_PRICE_FEATURES, features_to_ohlcv, ohlcv_to_features
-from world_model.trainer import get_device, load_world_model
+from world_model.data import features_to_ohlcv, ohlcv_to_features
 
 logger = logging.getLogger(__name__)
 
 MACRO_DIR = Path(__file__).parent.parent / "data" / "macro"
-LOOKBACK = 50
+CHECKPOINT_DIR = Path(__file__).parent.parent / "checkpoints" / "world_model"
+LOOKBACK = 100
+
+
+def _get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _load_model(checkpoint_path: Path | None, device: torch.device) -> torch.nn.Module:
+    """Load model from checkpoint, auto-detecting architecture type."""
+    if checkpoint_path is None:
+        for name in ["best_transformer.pt", "best_cnn-gru.pt", "best_model.pt"]:
+            path = CHECKPOINT_DIR / name
+            if path.exists():
+                checkpoint_path = path
+                break
+    if checkpoint_path is None:
+        raise FileNotFoundError(f"No checkpoint found in {CHECKPOINT_DIR}")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    model_type = checkpoint.get("model_type", "cnn-gru")
+
+    if model_type == "transformer":
+        from world_model.model import CausalTransformerWorldModel, TransformerConfig
+        seq_len = checkpoint.get("seq_len", 100)
+        model = CausalTransformerWorldModel(TransformerConfig(seq_len=seq_len))
+    else:
+        from world_model.model import MarketWorldModel, WorldModelConfig
+        config_dict = checkpoint.get("config", {})
+        model = MarketWorldModel(WorldModelConfig(**config_dict) if config_dict else None)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)
+    model.eval()
+    logger.info(f"Loaded {model_type} model from {checkpoint_path}")
+    return model
 
 
 class NeuralSimulator:
@@ -47,6 +85,8 @@ class NeuralSimulator:
         seed: int | None = None,
         temperature: float = 0.3,
         checkpoint_path: Path | None = None,
+        model: torch.nn.Module | None = None,
+        device: torch.device | None = None,
     ):
         self.task_id = task_id
         self.symbols = TASK_STOCKS[task_id]
@@ -61,8 +101,12 @@ class NeuralSimulator:
 
         self._macro_data = load_macro_data(MACRO_DIR)
 
-        self._device = get_device()
-        self._model, self._checkpoint = load_world_model(checkpoint_path, self._device)
+        if model is not None:
+            self._model = model
+            self._device = device or _get_device()
+        else:
+            self._device = device or _get_device()
+            self._model = _load_model(checkpoint_path, self._device)
 
         # Episode state (populated on reset)
         self._generated: dict[str, pd.DataFrame] = {}
@@ -117,8 +161,7 @@ class NeuralSimulator:
                 predicted, _ = self._model.predict_next(tensor, temperature=self.temperature)
                 day_features = predicted.squeeze(0).cpu().numpy()
 
-                # Clip to realistic daily move bounds (±10% max)
-                day_features = np.clip(day_features, -0.10, 0.10)
+                day_features = np.clip(day_features, -0.05, 0.05)
 
                 ohlcv = features_to_ohlcv(day_features, last_close, last_volume)
                 ohlcv["timestamp"] = last_timestamp + pd.Timedelta(days=day + 1)
@@ -127,9 +170,17 @@ class NeuralSimulator:
                 last_close = ohlcv["close"]
                 last_volume = ohlcv["volume"]
 
-                # Slide the window: drop first row, append new features
-                new_features = np.zeros((1, seed_features.shape[1]), dtype=np.float32)
-                new_features[0, :N_PRICE_FEATURES] = day_features[:N_PRICE_FEATURES]
+                # Build full feature vector including derived features
+                high_ret, low_ret = day_features[1], day_features[2]
+                intraday_range = max(high_ret - low_ret, 0.001)
+                body = abs(day_features[3] - day_features[0])
+                body_ratio = min(body / intraday_range, 0.5) if intraday_range > 0 else 0.5
+
+                new_features = np.array([[
+                    day_features[0], day_features[1], day_features[2],
+                    day_features[3], day_features[4],
+                    intraday_range, body_ratio,
+                ]], dtype=np.float32)
                 input_seq = np.concatenate([input_seq[1:], new_features], axis=0)
 
         gen_df = pd.DataFrame(generated_rows)
