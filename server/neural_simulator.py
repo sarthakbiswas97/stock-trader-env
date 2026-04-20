@@ -83,7 +83,7 @@ class NeuralSimulator:
         self,
         task_id: str,
         seed: int | None = None,
-        temperature: float = 0.3,
+        temperature: float = 1.0,
         checkpoint_path: Path | None = None,
         model: torch.nn.Module | None = None,
         device: torch.device | None = None,
