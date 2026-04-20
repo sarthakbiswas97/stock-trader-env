@@ -1,0 +1,269 @@
+"""Tests for the neural market world model."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+
+from world_model.data import (
+    INPUT_DIM,
+    N_FEATURES,
+    N_PRICE_FEATURES,
+    MarketSequenceDataset,
+    features_to_ohlcv,
+    ohlcv_to_features,
+)
+from world_model.model import (
+    MarketDecoder,
+    MarketDynamics,
+    MarketEncoder,
+    MarketWorldModel,
+    WorldModelConfig,
+    mdn_loss,
+    reconstruction_loss,
+)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def config():
+    return WorldModelConfig(seq_len=20)
+
+
+@pytest.fixture
+def model(config):
+    return MarketWorldModel(config)
+
+
+@pytest.fixture
+def sample_ohlcv():
+    """Generate synthetic OHLCV data for testing."""
+    n_days = 100
+    rng = np.random.default_rng(42)
+    close = 1000.0 + np.cumsum(rng.normal(0, 10, n_days))
+    return pd.DataFrame({
+        "timestamp": pd.date_range("2024-01-01", periods=n_days),
+        "open": close + rng.normal(0, 2, n_days),
+        "high": close + np.abs(rng.normal(5, 3, n_days)),
+        "low": close - np.abs(rng.normal(5, 3, n_days)),
+        "close": close,
+        "volume": rng.integers(100_000, 10_000_000, n_days),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Data pipeline tests
+# ---------------------------------------------------------------------------
+
+class TestOhlcvToFeatures:
+    def test_output_shape(self, sample_ohlcv):
+        features = ohlcv_to_features(sample_ohlcv)
+        assert features.shape == (len(sample_ohlcv) - 1, N_FEATURES)
+
+    def test_returns_are_bounded(self, sample_ohlcv):
+        features = ohlcv_to_features(sample_ohlcv)
+        assert np.all(features >= -0.5)
+        assert np.all(features <= 0.5)
+
+    def test_dtype_is_float32(self, sample_ohlcv):
+        features = ohlcv_to_features(sample_ohlcv)
+        assert features.dtype == np.float32
+
+    def test_handles_zero_volume(self):
+        df = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=10),
+            "open": [100] * 10,
+            "high": [105] * 10,
+            "low": [95] * 10,
+            "close": [100] * 10,
+            "volume": [0] * 10,
+        })
+        features = ohlcv_to_features(df)
+        assert not np.any(np.isnan(features))
+
+
+class TestFeaturesToOhlcv:
+    def test_reconstruction_keys(self):
+        features = np.array([0.01, 0.02, -0.01, 0.005, 0.1])
+        result = features_to_ohlcv(features, 1000.0, 1_000_000.0)
+        assert set(result.keys()) == {"open", "high", "low", "close", "volume"}
+
+    def test_ohlc_consistency(self):
+        features = np.array([0.01, 0.03, -0.02, 0.005, 0.1])
+        result = features_to_ohlcv(features, 1000.0, 1_000_000.0)
+        assert result["high"] >= result["open"]
+        assert result["high"] >= result["close"]
+        assert result["low"] <= result["open"]
+        assert result["low"] <= result["close"]
+        assert result["low"] > 0
+
+    def test_volume_positive(self):
+        features = np.array([0.0, 0.0, 0.0, 0.0, -5.0])
+        result = features_to_ohlcv(features, 1000.0, 1_000_000.0)
+        assert result["volume"] >= 100
+
+
+class TestMarketSequenceDataset:
+    def test_creates_sequences(self, sample_ohlcv):
+        dataset = MarketSequenceDataset({"TEST": sample_ohlcv}, seq_len=20)
+        assert len(dataset) > 0
+
+    def test_sequence_shape(self, sample_ohlcv):
+        dataset = MarketSequenceDataset({"TEST": sample_ohlcv}, seq_len=20)
+        seq, target = dataset[0]
+        assert seq.shape == (20, INPUT_DIM)
+        assert target.shape == (N_PRICE_FEATURES,)
+
+    def test_skips_short_symbols(self):
+        short_df = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=10),
+            "open": [100] * 10,
+            "high": [105] * 10,
+            "low": [95] * 10,
+            "close": [100] * 10,
+            "volume": [1_000_000] * 10,
+        })
+        dataset = MarketSequenceDataset({"SHORT": short_df}, seq_len=50)
+        assert len(dataset) == 0
+
+    def test_compute_stats(self, sample_ohlcv):
+        dataset = MarketSequenceDataset({"TEST": sample_ohlcv}, seq_len=20)
+        stats = dataset.compute_stats()
+        assert stats.feature_means.shape == (N_FEATURES,)
+        assert stats.feature_stds.shape == (N_FEATURES,)
+        assert np.all(stats.feature_stds > 0)
+
+
+# ---------------------------------------------------------------------------
+# Model architecture tests
+# ---------------------------------------------------------------------------
+
+class TestMarketEncoder:
+    def test_output_shape(self, config):
+        encoder = MarketEncoder(config)
+        x = torch.randn(4, config.seq_len, config.input_dim)
+        out = encoder(x)
+        assert out.shape == (4, config.latent_dim)
+
+
+class TestMarketDynamics:
+    def test_forward_shapes(self, config):
+        dynamics = MarketDynamics(config)
+        latent = torch.randn(4, config.latent_dim)
+        action = torch.zeros(4, 1)
+        pi, mu, sigma, hidden = dynamics(latent, action)
+
+        assert pi.shape == (4, config.n_gaussians)
+        assert mu.shape == (4, config.n_gaussians, config.n_price_features)
+        assert sigma.shape == (4, config.n_gaussians, config.n_price_features)
+        assert hidden.shape == (config.gru_layers, 4, config.gru_hidden_dim)
+
+    def test_pi_sums_to_one(self, config):
+        dynamics = MarketDynamics(config)
+        latent = torch.randn(4, config.latent_dim)
+        action = torch.zeros(4, 1)
+        pi, _, _, _ = dynamics(latent, action)
+        probs = torch.exp(pi)
+        assert torch.allclose(probs.sum(dim=-1), torch.ones(4), atol=1e-5)
+
+    def test_sigma_positive(self, config):
+        dynamics = MarketDynamics(config)
+        latent = torch.randn(4, config.latent_dim)
+        action = torch.zeros(4, 1)
+        _, _, sigma, _ = dynamics(latent, action)
+        assert torch.all(sigma > 0)
+
+    def test_sample_shape(self, config):
+        dynamics = MarketDynamics(config)
+        latent = torch.randn(4, config.latent_dim)
+        action = torch.zeros(4, 1)
+        pi, mu, sigma, _ = dynamics(latent, action)
+        sample = dynamics.sample(pi, mu, sigma)
+        assert sample.shape == (4, config.n_price_features)
+
+
+class TestMarketDecoder:
+    def test_output_shape(self, config):
+        decoder = MarketDecoder(config)
+        latent = torch.randn(4, config.latent_dim)
+        out = decoder(latent)
+        assert out.shape == (4, config.n_features)
+
+
+class TestMarketWorldModel:
+    def test_forward_shapes(self, model, config):
+        seq = torch.randn(4, config.seq_len, config.input_dim)
+        latent, pi, mu, sigma, recon = model(seq)
+
+        assert latent.shape == (4, config.latent_dim)
+        assert pi.shape == (4, config.n_gaussians)
+        assert mu.shape == (4, config.n_gaussians, config.n_price_features)
+        assert recon.shape == (4, config.n_features)
+
+    def test_forward_default_action(self, model, config):
+        seq = torch.randn(2, config.seq_len, config.input_dim)
+        latent, pi, mu, sigma, recon = model(seq)
+        assert latent.shape[0] == 2
+
+    def test_predict_next(self, model, config):
+        seq = torch.randn(2, config.seq_len, config.input_dim)
+        action = torch.ones(2, 1)
+        features, hidden = model.predict_next(seq, action)
+
+        assert features.shape == (2, config.n_price_features)
+        assert hidden.shape == (config.gru_layers, 2, config.gru_hidden_dim)
+
+    def test_temperature_affects_variance(self, model, config):
+        torch.manual_seed(42)
+        seq = torch.randn(1, config.seq_len, config.input_dim)
+        action = torch.zeros(1, 1)
+
+        samples_low = [model.predict_next(seq, action, temperature=0.1)[0] for _ in range(20)]
+        samples_high = [model.predict_next(seq, action, temperature=2.0)[0] for _ in range(20)]
+
+        var_low = torch.stack(samples_low).var(dim=0).mean()
+        var_high = torch.stack(samples_high).var(dim=0).mean()
+        assert var_high > var_low
+
+    def test_param_count(self, model):
+        n = model.count_parameters()
+        assert 50_000 < n < 500_000
+
+
+# ---------------------------------------------------------------------------
+# Loss function tests
+# ---------------------------------------------------------------------------
+
+class TestLossFunctions:
+    def test_mdn_loss_finite(self):
+        pi = torch.log_softmax(torch.randn(4, 3), dim=-1)
+        mu = torch.randn(4, 3, 5)
+        sigma = torch.ones(4, 3, 5) * 0.1
+        target = torch.randn(4, 5)
+        loss = mdn_loss(pi, mu, sigma, target)
+        assert torch.isfinite(loss)
+        assert loss.item() > 0
+
+    def test_mdn_loss_lower_for_closer_target(self):
+        pi = torch.log_softmax(torch.zeros(4, 3), dim=-1)
+        mu = torch.zeros(4, 3, 5)
+        sigma = torch.ones(4, 3, 5) * 0.1
+
+        close_target = torch.zeros(4, 5)
+        far_target = torch.ones(4, 5) * 10
+
+        loss_close = mdn_loss(pi, mu, sigma, close_target)
+        loss_far = mdn_loss(pi, mu, sigma, far_target)
+        assert loss_close < loss_far
+
+    def test_reconstruction_loss_finite(self):
+        predicted = torch.randn(4, N_FEATURES)
+        sequence = torch.randn(4, 20, INPUT_DIM)
+        loss = reconstruction_loss(predicted, sequence)
+        assert torch.isfinite(loss)
+        assert loss.item() >= 0

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "v2/**"]
+    branches: [main, "v2/**", "v3/**"]
   pull_request:
     branches: [main]
 
@@ -20,7 +20,7 @@ jobs:
         run: pip install ruff
 
       - name: Lint
-        run: ruff check server/ models.py training/ baselines/ tests/
+        run: ruff check server/ models.py training/ baselines/ world_model/ tests/
 
   test:
     runs-on: ubuntu-latest
@@ -37,6 +37,7 @@ jobs:
           pip install -r requirements.txt
           pip install gymnasium mlflow stable-baselines3
           pip install pytest pytest-cov datasets
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e .
 
       - name: Download market data from HF Hub
@@ -66,4 +67,4 @@ jobs:
           "
 
       - name: Run tests
-        run: PYTHONPATH=. pytest --cov=server --cov=models --cov-report=term-missing --cov-fail-under=80
+        run: PYTHONPATH=. pytest --cov=server --cov=models --cov=world_model --cov-report=term-missing --cov-fail-under=80
