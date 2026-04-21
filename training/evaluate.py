@@ -36,6 +36,7 @@ def evaluate_agent(
     seed: int = 42,
     agent_name: str = "unnamed",
     log_to_mlflow: bool = True,
+    simulator_mode: str = "replay",
 ) -> EvalResults:
     """Run agent through N episodes and return aggregate EvalResults."""
     scores: list[float] = []
@@ -48,6 +49,7 @@ def evaluate_agent(
             seed=episode_seed,
             obs_mode="text",
             split=split,
+            simulator_mode=simulator_mode,
         )
 
         obs, info = env.reset()

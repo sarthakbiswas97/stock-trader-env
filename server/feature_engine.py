@@ -222,6 +222,20 @@ def compute_range_expansion(df: pd.DataFrame, period: int = 20) -> dict:
     return {"ratio": round(ratio, 1), "label": label}
 
 
+def compute_regime(close: pd.Series, period_short: int = 50, period_long: int = 200) -> str:
+    """Market regime based on EMA crossover. Requires 200+ data points for accuracy."""
+    if len(close) < period_long:
+        return "unknown"
+    ema_short = ema(close, period_short).iloc[-1]
+    ema_long = ema(close, period_long).iloc[-1]
+    ratio = (ema_short - ema_long) / ema_long if ema_long != 0 else 0
+    if ratio > 0.02:
+        return "bull"
+    elif ratio < -0.02:
+        return "bear"
+    return "sideways"
+
+
 def compute_all_features(df: pd.DataFrame) -> dict:
     """Compute all features for a stock. Input: DataFrame with open,high,low,close,volume columns."""
     close = df["close"]
@@ -238,6 +252,7 @@ def compute_all_features(df: pd.DataFrame) -> dict:
         "candlestick": compute_candlestick(df),
         "gap": compute_gap(df),
         "range": compute_range_expansion(df),
+        "regime": compute_regime(close),
     }
 
 
@@ -255,12 +270,14 @@ def features_to_text(symbol: str, price: float, daily_change_pct: float, feature
     vol_label = "very high" if vol_spike > 2.0 else "high" if vol_spike > 1.5 else "normal" if vol_spike > 0.7 else "low"
 
     sign = "+" if daily_change_pct >= 0 else ""
+    regime = features.get("regime", "unknown")
+
     lines = [
         f"{symbol}: Rs{price:,.0f} ({sign}{daily_change_pct:.1f}% today)",
         f"  RSI: {rsi:.0f} ({rsi_label}) | {macd_str}",
         f"  Trend: {features['trend']} | Bollinger: {features['bollinger']}",
         f"  Volume: {vol_spike:.1f}x avg ({vol_label}) | Volatility: {features['volatility']}",
-        f"  Momentum: {features['momentum']}",
+        f"  Momentum: {features['momentum']} | Regime: {regime}",
     ]
 
     # Candlestick pattern (only show if detected)

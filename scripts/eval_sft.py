@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--split", default="test")
+    parser.add_argument("--simulator-mode", default="replay", choices=["replay", "neural"])
     args = parser.parse_args()
 
     # Ensure market data is available (downloads from HF Hub if missing)
@@ -103,7 +104,10 @@ def main() -> None:
         return action
 
     logger.info("Evaluating: task=%s, episodes=%d, seed=%d, split=%s", args.task, args.episodes, args.seed, args.split)
-    results = evaluate_agent(sft_agent, task_id=args.task, n_episodes=args.episodes, seed=args.seed, split=args.split)
+    results = evaluate_agent(
+        sft_agent, task_id=args.task, n_episodes=args.episodes,
+        seed=args.seed, split=args.split, simulator_mode=args.simulator_mode,
+    )
 
     logger.info("")
     logger.info("=== Results ===")
