@@ -197,6 +197,7 @@ class StockTradingGymEnv(gym.Env):
 
     def _build_info(self, obs: Any) -> dict[str, Any]:
         """Build the info dict returned alongside observations."""
+        tracker = self._env.mistake_tracker
         return {
             "day": obs.day,
             "total_days": obs.total_days,
@@ -207,4 +208,6 @@ class StockTradingGymEnv(gym.Env):
             "env_version": obs.env_version,
             "task_version": obs.task_version,
             "num_positions": len(obs.positions),
+            "mistakes_total": tracker.episode_count,
+            "mistakes_by_type": tracker.episode_counts_by_type,
         }

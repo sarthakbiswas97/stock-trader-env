@@ -102,19 +102,24 @@ class ExperimentTracker:
         score: float,
         total_return: float,
         step: int | None = None,
+        mistakes: dict[str, int] | None = None,
     ) -> None:
         """Log metrics from one completed episode."""
         self._scores.append(score)
         self._returns.append(total_return)
 
         episode_num = len(self._scores)
-        mlflow.log_metrics(
-            {
-                "episode_score": score,
-                "episode_return": total_return,
-            },
-            step=step or episode_num,
-        )
+        metrics = {
+            "episode_score": score,
+            "episode_return": total_return,
+        }
+
+        if mistakes:
+            metrics["mistakes_total"] = sum(mistakes.values())
+            for mistake_type, count in mistakes.items():
+                metrics[f"mistakes_{mistake_type}"] = count
+
+        mlflow.log_metrics(metrics, step=step or episode_num)
 
     def log_model(self, path: str | Path) -> None:
         """Log a model checkpoint as an artifact."""

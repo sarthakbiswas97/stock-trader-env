@@ -10,7 +10,8 @@ from openenv.core.env_server.interfaces import Environment
 from models import TradeAction, MarketObservation, TradingState, PositionInfo
 from server.market_simulator import MarketSimulator
 from server.neural_simulator import NeuralSimulator
-from server.feature_engine import compute_all_features, features_to_text
+from server.feature_engine import compute_all_features, compute_rsi, features_to_text
+from server.mistake_tracker import MistakeTracker
 from server.macro_data import macro_to_text
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
@@ -92,6 +93,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         self._done = False
         self._last_reward = 0.0
         self._current_task = "single_stock"
+        self._mistake_tracker = MistakeTracker()
 
     def reset(
         self,
@@ -115,6 +117,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             self._sim = MarketSimulator(task_id, seed=seed)
         self._sim.reset()
         self._portfolio = Portfolio(self._task_config["initial_capital"])
+        self._mistake_tracker.reset_episode()
         self._done = False
         self._last_reward = 0.0
 
@@ -200,7 +203,22 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         self._last_reward = round(reward, 4)
 
-        # Check if episode is done
+        # Detect trading mistakes
+        rsi = self._get_rsi(symbol) if symbol else None
+        worst_pnl = self._get_worst_position_pnl(new_prices)
+        self._mistake_tracker.detect_mistakes(
+            day=self._sim.current_day,
+            action_type=action_type,
+            symbol=symbol or "",
+            rsi=rsi,
+            regime_blocked=regime_blocked,
+            position_pnl=worst_pnl,
+            trades_today=self._portfolio.trades_today,
+            max_trades=self._task_config["max_trades_per_day"],
+            exposure_pct=exposure_pct,
+            max_exposure=self._task_config["max_position_pct"],
+        )
+
         if self._sim.is_done:
             self._done = True
 
@@ -211,6 +229,29 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
     @property
     def state(self) -> TradingState:
         return self._state
+
+    @property
+    def mistake_tracker(self) -> MistakeTracker:
+        return self._mistake_tracker
+
+    def _get_rsi(self, symbol: str) -> float | None:
+        if not self._sim or not symbol:
+            return None
+        try:
+            lookback = self._sim.get_lookback_data(symbol)
+            return compute_rsi(lookback["close"])
+        except (IndexError, KeyError, ValueError):
+            return None
+
+    def _get_worst_position_pnl(self, prices: dict[str, float]) -> float | None:
+        if not self._portfolio or not self._portfolio.positions:
+            return None
+        worst = 0.0
+        for sym, pos in self._portfolio.positions.items():
+            price = prices.get(sym, pos["avg_price"])
+            pnl = (price - pos["avg_price"]) / pos["avg_price"] * 100 if pos["avg_price"] > 0 else 0.0
+            worst = min(worst, pnl)
+        return worst
 
     # --- Private methods ---
 
