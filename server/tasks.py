@@ -15,6 +15,15 @@ def _clamp_score(score: float) -> float:
     """Clamp score to the open interval (0, 1)."""
     return round(max(SCORE_MIN, min(SCORE_MAX, score)), 4)
 
+# Curriculum tiers ordered by difficulty (used by CurriculumManager)
+CURRICULUM_ORDER = [
+    "single_stock",
+    "single_stock_costs",
+    "multi_stock_3",
+    "portfolio",
+    "full_autonomous",
+]
+
 TASK_CONFIGS = {
     "single_stock": {
         "version": "1.0.0",
@@ -26,10 +35,40 @@ TASK_CONFIGS = {
         "symbols": ["RELIANCE"],
         "transaction_cost": 0.0,
         "slippage": 0.0,
-        "max_position_pct": 1.0,       # Can go all-in
-        "max_trades_per_day": 100,      # No limit effectively
+        "max_position_pct": 1.0,
+        "max_trades_per_day": 100,
         "regime_gate": False,
         "position_limit_per_stock": 1.0,
+    },
+    "single_stock_costs": {
+        "version": "1.0.0",
+        "name": "Single Stock with Costs",
+        "difficulty": "easy-medium",
+        "description": "Trade RELIANCE with realistic transaction costs and slippage.",
+        "episode_days": 20,
+        "initial_capital": 100_000,
+        "symbols": ["RELIANCE"],
+        "transaction_cost": 0.001,
+        "slippage": 0.001,
+        "max_position_pct": 1.0,
+        "max_trades_per_day": 20,
+        "regime_gate": False,
+        "position_limit_per_stock": 1.0,
+    },
+    "multi_stock_3": {
+        "version": "1.0.0",
+        "name": "Multi-Stock (3)",
+        "difficulty": "medium-easy",
+        "description": "Trade 3 stocks with costs. Learn multi-stock position management.",
+        "episode_days": 25,
+        "initial_capital": 150_000,
+        "symbols": ["RELIANCE", "INFY", "TCS"],
+        "transaction_cost": 0.001,
+        "slippage": 0.001,
+        "max_position_pct": 0.6,
+        "max_trades_per_day": 15,
+        "regime_gate": False,
+        "position_limit_per_stock": 0.5,
     },
     "portfolio": {
         "version": "1.0.0",
@@ -177,6 +216,8 @@ def grade_full_autonomous(
 
 GRADERS = {
     "single_stock": grade_single_stock,
+    "single_stock_costs": grade_single_stock,
+    "multi_stock_3": grade_portfolio,
     "portfolio": grade_portfolio,
     "full_autonomous": grade_full_autonomous,
 }

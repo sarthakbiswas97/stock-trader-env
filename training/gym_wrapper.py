@@ -42,6 +42,7 @@ class StockTradingGymEnv(gym.Env):
         obs_mode: str = "text",
         split: str | None = None,
         log_trajectories: bool = False,
+        simulator_mode: str = "replay",
     ):
         super().__init__()
 
@@ -57,6 +58,7 @@ class StockTradingGymEnv(gym.Env):
         self._obs_mode = obs_mode
         self._split = SPLITS[split] if split else None
         self._log_trajectories = log_trajectories
+        self._simulator_mode = simulator_mode
 
         self._config = TASK_CONFIGS[task_id]
         self._env = StockTradingEnvironment()
@@ -117,6 +119,7 @@ class StockTradingGymEnv(gym.Env):
         obs = self._env.reset(
             seed=effective_seed,
             task_id=self._task_id,
+            simulator_mode=self._simulator_mode,
         )
 
         # Constrain to split date range if needed
