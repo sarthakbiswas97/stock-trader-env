@@ -20,10 +20,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s — %(message)s")
 logger = logging.getLogger(__name__)
@@ -128,11 +132,11 @@ def build_distilled_record(original: dict, reasoning: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reverse distillation for SFT reasoning")
     parser.add_argument("--limit", type=int, default=5000, help="Number of examples to distill")
+    parser.add_argument("--offset", type=int, default=0, help="Skip first N records")
     parser.add_argument("--output", type=Path, default=OUTPUT_FILE)
     parser.add_argument("--api-key", type=str, default=None, help="OpenAI API key (or set OPENAI_API_KEY)")
     args = parser.parse_args()
 
-    import os
     api_key = args.api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         logger.error("Set OPENAI_API_KEY or pass --api-key")
@@ -140,7 +144,8 @@ def main() -> None:
 
     client = OpenAI(api_key=api_key)
 
-    records = load_sft_records(INPUT_FILE, limit=args.limit)
+    all_records = load_sft_records(INPUT_FILE, limit=args.offset + args.limit)
+    records = all_records[args.offset:]
     distilled = []
     failed = 0
     start_time = time.time()

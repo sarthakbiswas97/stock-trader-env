@@ -102,16 +102,19 @@ class TrainLossPlateauCallback(TrainerCallback):
 
 DEFAULTS = {
     "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-    "dataset": "sarthakbiswas/stock-trader-sft-v2",
+    "dataset": "sarthakbiswas/stock-trader-sft-v3",
     "max_seq_length": 1024,
     "epochs": 1,
     "batch_size": 4,
     "grad_accum": 8,
-    "lr": 2e-5,
-    "warmup_ratio": 0.05,
-    "lora_rank": 64,
-    "lora_alpha": 16,
-    "output_dir": "/workspace/sft-v2-checkpoint",
+    "lr": 5e-6,
+    "warmup_ratio": 0.10,
+    "weight_decay": 0.05,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "neftune_alpha": 5.0,
+    "output_dir": "/workspace/sft-v3-checkpoint",
+    "save_steps": 100,
     "plateau_window": 30,
     "plateau_threshold": 0.015,
     "plateau_patience": 3,
@@ -124,7 +127,7 @@ def train(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     # 1. Environment check
     # ------------------------------------------------------------------
-    logger.info("=== SFT Training v2 ===")
+    logger.info("=== SFT Training v3 (distilled reasoning) ===")
     logger.info("CUDA: %s", torch.cuda.is_available())
     if torch.cuda.is_available():
         logger.info("GPU: %s", torch.cuda.get_device_name(0))
@@ -149,10 +152,7 @@ def train(args: argparse.Namespace) -> None:
         model,
         r=args.lora_rank,
         lora_alpha=args.lora_alpha,
-        target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_dropout=0.05,
         bias="none",
     )
@@ -179,7 +179,7 @@ def train(args: argparse.Namespace) -> None:
     mlflow.set_tracking_uri("file:///workspace/mlruns")
     mlflow.set_experiment("sft-training")
 
-    run_name = f"sft-v2-r{args.lora_rank}-ep{args.epochs}-bs{args.batch_size * args.grad_accum}"
+    run_name = f"sft-v3-r{args.lora_rank}-lr{args.lr}-ep{args.epochs}"
     mlflow_run = mlflow.start_run(run_name=run_name)
 
     mlflow.log_params({
@@ -228,14 +228,17 @@ def train(args: argparse.Namespace) -> None:
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
+        weight_decay=args.weight_decay,
         warmup_steps=int(total_steps * args.warmup_ratio),
         lr_scheduler_type="cosine",
         logging_steps=10,
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=args.save_steps,
         eval_strategy="no",
         bf16=True,
         max_seq_length=args.max_seq_length,
         gradient_checkpointing=True,
+        neftune_noise_alpha=args.neftune_alpha,
         report_to="mlflow",
         seed=42,
         optim="adamw_torch_fused",
@@ -399,7 +402,7 @@ RELIANCE: Rs1,250 (-1.5% today)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SFT Training v2")
+    parser = argparse.ArgumentParser(description="SFT Training v3 (distilled reasoning)")
     parser.add_argument("--model-name", default=DEFAULTS["model_name"])
     parser.add_argument("--dataset", default=DEFAULTS["dataset"])
     parser.add_argument("--max-seq-length", type=int, default=DEFAULTS["max_seq_length"])
@@ -407,12 +410,15 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=DEFAULTS["batch_size"])
     parser.add_argument("--grad-accum", type=int, default=DEFAULTS["grad_accum"])
     parser.add_argument("--lr", type=float, default=DEFAULTS["lr"])
+    parser.add_argument("--weight-decay", type=float, default=DEFAULTS["weight_decay"])
     parser.add_argument("--warmup-ratio", type=float, default=DEFAULTS["warmup_ratio"])
     parser.add_argument("--lora-rank", type=int, default=DEFAULTS["lora_rank"])
     parser.add_argument("--lora-alpha", type=int, default=DEFAULTS["lora_alpha"])
+    parser.add_argument("--neftune-alpha", type=float, default=DEFAULTS["neftune_alpha"])
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
-    parser.add_argument("--push-to-hub", action="store_true", help="Push adapter to HF Hub after training")
-    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-sft-v2-model", help="HF repo for model push")
+    parser.add_argument("--save-steps", type=int, default=DEFAULTS["save_steps"])
+    parser.add_argument("--push-to-hub", action="store_true")
+    parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-sft-v3-model")
     parser.add_argument("--plateau-window", type=int, default=DEFAULTS["plateau_window"])
     parser.add_argument("--plateau-threshold", type=float, default=DEFAULTS["plateau_threshold"])
     parser.add_argument("--plateau-patience", type=int, default=DEFAULTS["plateau_patience"])
