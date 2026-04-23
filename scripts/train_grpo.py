@@ -352,6 +352,29 @@ def trading_reward(completions: list, **kwargs) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
+# Reward Function 3: LLM judge (pre-scored, reads from dataset column)
+# ---------------------------------------------------------------------------
+
+
+def llm_judge_reward(completions: list, **kwargs) -> list[float]:
+    """Read pre-computed LLM judge score from dataset column.
+
+    Scores are pre-computed by scripts/score_with_llm.py and stored as
+    a float in [0, 1]. We scale to [-1, +1] for reward alignment.
+
+    0.0 (bad decision) -> -1.0 reward
+    0.5 (neutral)      ->  0.0 reward
+    1.0 (good decision) -> +1.0 reward
+    """
+    scores = kwargs.get("llm_score", [])
+    rewards = []
+    for i in range(len(completions)):
+        score = scores[i] if i < len(scores) else 0.0
+        rewards.append(float((score - 0.5) * 2.0))
+    return rewards
+
+
+# ---------------------------------------------------------------------------
 # Temperature-scheduled GRPOTrainer subclass
 # ---------------------------------------------------------------------------
 
@@ -532,13 +555,21 @@ def train(args: argparse.Namespace) -> None:
 
     ScheduledTemperatureGRPOTrainer = _create_trainer_class()
 
+    reward_fns = [format_gate, trading_reward]
+    if args.use_llm_reward:
+        if "llm_score" not in train_dataset.column_names:
+            logger.warning("--use-llm-reward set but 'llm_score' column missing. Skipping LLM reward.")
+        else:
+            reward_fns.append(llm_judge_reward)
+            logger.info("LLM judge reward enabled (3 reward functions)")
+
     trainer = ScheduledTemperatureGRPOTrainer(
         t_start=args.t_start,
         t_end=args.t_end,
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        reward_funcs=[format_gate, trading_reward],
+        reward_funcs=reward_fns,
         processing_class=tokenizer,
     )
 
@@ -639,6 +670,7 @@ def main() -> None:
     parser.add_argument("--t-start", type=float, default=DEFAULTS["t_start"])
     parser.add_argument("--t-end", type=float, default=DEFAULTS["t_end"])
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
+    parser.add_argument("--use-llm-reward", action="store_true", help="Add LLM judge as third reward function (requires llm_score column in dataset)")
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v3-model")
     args = parser.parse_args()
