@@ -11,7 +11,7 @@ from models import TradeAction, MarketObservation, TradingState, PositionInfo
 from server.market_simulator import MarketSimulator
 from server.neural_simulator import NeuralSimulator
 from server.feature_engine import compute_all_features, compute_rsi, features_to_text
-from server.mistake_tracker import MistakeTracker
+from server.mistake_tracker import MistakeTracker, MistakeType
 from server.macro_data import macro_to_text
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
@@ -173,7 +173,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         elif action_type == "SELL" and symbol:
             reward += self._execute_sell(symbol, fraction, prices)
         elif action_type == "HOLD":
-            pass  # No action
+            reward += self._evaluate_hold(prices)
 
         # Advance day
         self._sim.advance_day()
@@ -203,10 +203,10 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         self._last_reward = round(reward, 4)
 
-        # Detect trading mistakes
+        # Detect trading mistakes and apply penalties
         rsi = self._get_rsi(symbol) if symbol else None
         worst_pnl = self._get_worst_position_pnl(new_prices)
-        self._mistake_tracker.detect_mistakes(
+        detected = self._mistake_tracker.detect_mistakes(
             day=self._sim.current_day,
             action_type=action_type,
             symbol=symbol or "",
@@ -218,6 +218,13 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             exposure_pct=exposure_pct,
             max_exposure=self._task_config["max_position_pct"],
         )
+
+        # Penalize mistakes not already handled by action execution
+        for mistake in detected:
+            if mistake.type == MistakeType.OVERBOUGHT_BUY:
+                reward -= 0.15
+            elif mistake.type == MistakeType.OVERSOLD_SELL:
+                reward -= 0.15
 
         if self._sim.is_done:
             self._done = True
@@ -252,6 +259,36 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
             pnl = (price - pos["avg_price"]) / pos["avg_price"] * 100 if pos["avg_price"] > 0 else 0.0
             worst = min(worst, pnl)
         return worst
+
+    def _evaluate_hold(self, prices: dict[str, float]) -> float:
+        """Evaluate HOLD quality based on market signals and portfolio state.
+
+        Returns a small reward/penalty:
+          - Missed opportunity (strong signal ignored): -0.15
+          - Holding a losing position: -0.1
+          - Justified patience (no clear signal): +0.01
+        """
+        has_positions = bool(self._portfolio and self._portfolio.positions)
+        worst_pnl = self._get_worst_position_pnl(prices)
+
+        # Check RSI across all task symbols for actionable signals
+        extreme_rsi = False
+        for sym in self._task_config["symbols"]:
+            rsi = self._get_rsi(sym)
+            if rsi is not None and (rsi < 25 or rsi > 75):
+                extreme_rsi = True
+                break
+
+        # Holding a losing position (> 5% drawdown) — should cut losses
+        if has_positions and worst_pnl is not None and worst_pnl < -5.0:
+            return -0.1
+
+        # Strong signal ignored — missed opportunity
+        if extreme_rsi:
+            return -0.15
+
+        # No strong signal — justified patience
+        return 0.01
 
     # --- Private methods ---
 
