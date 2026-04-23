@@ -20,6 +20,7 @@ import argparse
 import logging
 import os
 import time
+from pathlib import Path
 
 import mlflow
 import numpy as np
@@ -168,9 +169,18 @@ def train(args: argparse.Namespace) -> None:
     from datasets import load_dataset
 
     logger.info("Loading dataset: %s", args.dataset)
-    dataset = load_dataset(args.dataset)
-    train_ds = dataset["train"]
-    val_ds = dataset["validation"]
+    dataset_path = Path(args.dataset)
+    if dataset_path.exists() and dataset_path.suffix == ".jsonl":
+        # Local JSONL file — load directly, split 90/10
+        full_ds = load_dataset("json", data_files=str(dataset_path), split="train")
+        split = full_ds.train_test_split(test_size=0.1, seed=42)
+        train_ds = split["train"]
+        val_ds = split["test"]
+    else:
+        # HF Hub dataset
+        dataset = load_dataset(args.dataset)
+        train_ds = dataset["train"]
+        val_ds = dataset["validation"]
     logger.info("Train: %d examples, Val: %d examples", len(train_ds), len(val_ds))
 
     # ------------------------------------------------------------------
