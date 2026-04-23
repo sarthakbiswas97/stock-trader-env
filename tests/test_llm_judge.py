@@ -1,8 +1,5 @@
 """Tests for LLM-as-Judge infrastructure (no real API calls)."""
 
-import json
-import pytest
-
 from training.judge_prompt import (
     JudgeContext,
     JudgeScore,
