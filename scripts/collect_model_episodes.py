@@ -217,13 +217,19 @@ def run_episode(
     task_id: str,
     split: str,
     temperature: float = 0.7,
+    simulator_mode: str = "replay",
 ) -> EpisodeResult:
     """Run one full episode with the model and collect all data.
 
     Returns an EpisodeResult with prompts in the same format as
     collect_grpo_prompts.py output.
+
+    Supports both replay (CSV) and neural (world model) simulator modes.
     """
-    env = StockTradingGymEnv(task_id=task_id, seed=episode_seed, obs_mode="text", split=split)
+    env = StockTradingGymEnv(
+        task_id=task_id, seed=episode_seed, obs_mode="text",
+        split=split, simulator_mode=simulator_mode,
+    )
     obs, info = env.reset()
     initial_value = info["portfolio_value"]
 
@@ -231,11 +237,21 @@ def run_episode(
     # The gym env wraps StockTradingEnvironment which has the simulator.
     sim = env._env._sim
     symbol = sim.symbols[0]  # single_stock task has one symbol
-    start_idx = sim._start_idx[symbol]
 
-    # Load raw CSV for this symbol to compute forward prices and volatility
-    df = _load_stock_data(symbol)
-    closes = df["close"]
+    if simulator_mode == "neural":
+        # Neural env: prices are in sim._generated[symbol]
+        # The DataFrame has LOOKBACK seed rows + episode_days generated rows
+        from server.neural_simulator import LOOKBACK as NEURAL_LOOKBACK
+        gen_df = sim._generated[symbol]
+        closes = gen_df["close"].reset_index(drop=True)
+        start_idx = 0  # closes already starts from seed beginning
+        lookback_offset = NEURAL_LOOKBACK  # episode starts at this index
+    else:
+        # Replay: prices are in CSV files
+        start_idx = sim._start_idx[symbol]
+        df = _load_stock_data(symbol)
+        closes = df["close"]
+        lookback_offset = LOOKBACK  # use the script's constant
 
     observations: list[str] = []
     actions: list[str] = []
@@ -251,7 +267,7 @@ def run_episode(
         actions.append(action)
 
         # Compute metadata for this step
-        data_idx = start_idx + LOOKBACK + day
+        data_idx = start_idx + lookback_offset + day
         if data_idx < len(closes):
             price = float(closes.iloc[data_idx])
             prev_price = float(closes.iloc[data_idx - 1]) if data_idx > 0 else price
@@ -351,6 +367,8 @@ def main() -> None:
     parser.add_argument("--split", default="train")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--simulator-mode", default="replay", choices=["replay", "neural"],
+                        help="Environment mode: replay (CSV) or neural (world model)")
     parser.add_argument("--min-z", type=float, default=0.0,
                         help="Min |z_score| to keep a prompt (0.0 = keep all)")
     parser.add_argument("--output", default="", help="Output JSONL path (auto-generated if empty)")
@@ -375,6 +393,7 @@ def main() -> None:
             task_id=args.task,
             split=args.split,
             temperature=args.temperature,
+            simulator_mode=args.simulator_mode,
         )
         all_results.append(result)
 

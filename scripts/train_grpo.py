@@ -442,17 +442,23 @@ def train(args: argparse.Namespace) -> None:
         dtype=torch.bfloat16,
     )
 
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=64,
-        lora_alpha=16,
-        target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ],
-        lora_dropout=0.05,
-        bias="none",
-    )
+    # Add LoRA adapters only if the model doesn't already have them
+    # (e.g. when starting from an SFT checkpoint that already has adapters)
+    from peft import PeftModel
+    if isinstance(model, PeftModel):
+        logger.info("Model already has LoRA adapters — reusing existing adapters")
+    else:
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=64,
+            lora_alpha=16,
+            target_modules=[
+                "q_proj", "k_proj", "v_proj", "o_proj",
+                "gate_proj", "up_proj", "down_proj",
+            ],
+            lora_dropout=0.05,
+            bias="none",
+        )
 
     tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
     logger.info("Model loaded")
