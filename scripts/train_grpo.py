@@ -38,6 +38,7 @@ import logging
 import math
 import os
 import re
+import sys
 import time
 import warnings
 from collections import Counter
@@ -54,6 +55,12 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 logging.getLogger("mlflow").setLevel(logging.WARNING)
+
+# Stub packages that TRL imports unconditionally but we don't use.
+# Without these, training crashes on fresh pods missing mergekit/llm_blender/weave.
+import types as _types
+for _pkg in ["mergekit", "mergekit.config", "llm_blender", "weave"]:
+    sys.modules.setdefault(_pkg, _types.ModuleType(_pkg))
 
 # Monkey-patch: llm_blender (trl dependency) imports TRANSFORMERS_CACHE
 # which was removed in transformers 5.x. Patch before any trl import.

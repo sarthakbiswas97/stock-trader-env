@@ -207,6 +207,8 @@ The full scoreboard across all training iterations, evaluated on the single_stoc
 | GRPO v3 (hard examples) | 0.301 | -- | -2.22% | KL drift to 4.2, forgot SFT |
 | SFT v3 step-352 (overtrained) | 0.383 | -- | +0.03% | Lower loss, worse trading |
 | **SFT v3 step-200 (distilled)** | **0.399** | **0.417** | **+0.24%** | **Best model** |
+| RAFT from base (wrong) | 0.300 | 0.300 | 0.00% | No SFT foundation = HOLD only |
+| RAFT v2 (from SFT v3) | 0.360 | 0.399 | +0.00% | 640 winners, slight degradation |
 
 ### RAFT Self-Improvement
 
@@ -217,7 +219,25 @@ Using SFT v3 as the base model, we ran 100 episodes against the neural environme
 - **SFT examples from winners:** 640 training examples
 - **Winner scores range:** 0.5 - 0.8+
 
-These 640 examples represent the model's own successful trading trajectories -- episodes where it made good decisions. RAFT retrains on these winners, reinforcing successful behavior patterns.
+RAFT retrains on winners only, reinforcing successful behavior. However, RAFT v2 (trained from SFT v3 on these 640 winners) scored 0.360 static / 0.399 neural -- a slight degradation from SFT v3. With only 640 examples and 18 training steps, the signal was too weak to improve an already well-trained model. This taught us that RAFT needs either more data or a different learning rate schedule when building on top of SFT.
+
+An earlier attempt -- RAFT trained from the base model instead of SFT v3 -- scored 0.300 on both environments (pure HOLD). This confirmed that RAFT is not a replacement for SFT; it is a refinement step that requires a strong foundation.
+
+### GRPO Against Neural Environment
+
+The full RL loop: the agent trains via TRL's GRPOTrainer while the neural environment provides verifiable rewards. We collected 1,000 prompts across 50 episodes from the neural environment (mean score 0.395, 36% of episodes above 0.5), then ran GRPO with conservative settings designed to avoid the KL catastrophe:
+
+| Parameter | Previous (failed) | Current |
+|-----------|-------------------|---------|
+| Starting model | GRPO v2.1 | SFT v3 (best model, 0.399/0.417) |
+| Steps | 1000 | 300 (shorter = less KL drift) |
+| G (generations) | 8 | 4 (cheaper per step) |
+| beta (KL penalty) | 0.04 | 0.05 (stronger KL constraint) |
+| Prompts source | Static CSV replay | Neural environment (stochastic) |
+| HOLD handling | Free (zero cost) | Signal-based penalties |
+| Checkpoints | Final only | Every 50 steps (pick best by eval) |
+
+Each fix directly addresses a previous failure mode: higher beta prevents KL drift, shorter training prevents overfitting, neural prompts prevent memorization, and signal-based HOLD prevents the collapse to inaction.
 
 ### Interpreting the Numbers
 
