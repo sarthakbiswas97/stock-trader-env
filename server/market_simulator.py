@@ -22,6 +22,8 @@ MACRO_DIR = Path(__file__).parent.parent / "data" / "macro"
 # Stock universe for each task difficulty
 TASK_STOCKS = {
     "single_stock": ["RELIANCE"],
+    "single_stock_costs": ["RELIANCE"],
+    "multi_stock_3": ["RELIANCE", "INFY", "TCS"],
     "portfolio": [
         "RELIANCE", "INFY", "TCS", "HDFCBANK", "SBIN",
         "ICICIBANK", "BHARTIARTL", "ITC", "KOTAKBANK", "LT",
@@ -37,6 +39,8 @@ TASK_STOCKS = {
 
 TASK_EPISODE_DAYS = {
     "single_stock": 20,
+    "single_stock_costs": 20,
+    "multi_stock_3": 25,
     "portfolio": 30,
     "full_autonomous": 40,
 }
