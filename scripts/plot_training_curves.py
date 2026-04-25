@@ -204,10 +204,10 @@ def main() -> None:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-    plot_sft_loss(axes[0, 0], sft_log)
-    plot_kl_divergence(axes[0, 1], grpo_log)
-    plot_trading_reward(axes[1, 0], grpo_log)
-    plot_learning_curve(axes[1, 1])
+    plot_learning_curve(axes[0, 0])
+    plot_sft_loss(axes[0, 1], sft_log)
+    plot_kl_divergence(axes[1, 0], grpo_log)
+    plot_trading_reward(axes[1, 1], grpo_log)
 
     fig.suptitle(
         "Training the Trading Agent: SFT → GRPO Against Neural Environment",

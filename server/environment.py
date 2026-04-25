@@ -13,68 +13,9 @@ from server.neural_simulator import NeuralSimulator
 from server.feature_engine import compute_all_features, compute_rsi, features_to_text
 from server.mistake_tracker import MistakeTracker, MistakeType
 from server.macro_data import macro_to_text
+from server.portfolio import Portfolio
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
-
-
-class Portfolio:
-    """Tracks cash, positions, and trade history."""
-
-    def __init__(self, initial_capital: float):
-        self.initial_capital = initial_capital
-        self.cash = initial_capital
-        self.positions: dict[str, dict] = {}  # {symbol: {qty, avg_price}}
-        self.trade_log: list[dict] = []
-        self.daily_values: list[float] = [initial_capital]
-        self.daily_returns: list[float] = []
-        self.risk_violations: int = 0
-        self.regime_gated_days: int = 0
-        self.regime_respected: int = 0
-        self.trades_today: int = 0
-        self.total_trades: int = 0
-        self.peak_value: float = initial_capital
-        self.max_drawdown: float = 0.0
-
-    def get_value(self, prices: dict[str, float]) -> float:
-        """Total portfolio value."""
-        position_value = sum(
-            pos["qty"] * prices.get(sym, pos["avg_price"])
-            for sym, pos in self.positions.items()
-        )
-        return self.cash + position_value
-
-    def get_position_info(self, prices: dict[str, float]) -> list[PositionInfo]:
-        """Get position details for observation."""
-        result = []
-        for sym, pos in self.positions.items():
-            price = prices.get(sym, pos["avg_price"])
-            pnl_pct = (price - pos["avg_price"]) / pos["avg_price"] * 100 if pos["avg_price"] > 0 else 0.0
-            result.append(PositionInfo(
-                symbol=sym,
-                quantity=pos["qty"],
-                avg_price=round(pos["avg_price"], 2),
-                current_price=round(price, 2),
-                pnl_percent=round(pnl_pct, 2),
-                market_value=round(pos["qty"] * price, 2),
-            ))
-        return result
-
-    def record_daily(self, prices: dict[str, float]) -> None:
-        """Record end-of-day portfolio value."""
-        value = self.get_value(prices)
-        if len(self.daily_values) > 0:
-            prev = self.daily_values[-1]
-            daily_ret = (value - prev) / prev if prev > 0 else 0.0
-            self.daily_returns.append(daily_ret)
-        self.daily_values.append(value)
-        self.trades_today = 0
-
-        # Track drawdown
-        if value > self.peak_value:
-            self.peak_value = value
-        dd = (self.peak_value - value) / self.peak_value
-        if dd > self.max_drawdown:
-            self.max_drawdown = dd
 
 
 class StockTradingEnvironment(Environment[TradeAction, MarketObservation, TradingState]):

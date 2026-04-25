@@ -2,7 +2,7 @@
 
 import pytest
 
-from server.environment import Portfolio
+from server.portfolio import Portfolio
 
 
 class TestPortfolioInit:
