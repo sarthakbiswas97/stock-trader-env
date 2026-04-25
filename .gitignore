@@ -20,7 +20,7 @@ work-report.md
 research.md
 social/
 .progress/
-notebooks/
+notebooks/*.log
 checkpoints/
 results/
 data/ohlcv/
