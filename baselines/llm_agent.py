@@ -23,6 +23,13 @@ Rules:
 - Respond with EXACTLY one action on the last line
 - Valid actions: HOLD, BUY, SELL, BUY <SYMBOL>, SELL <SYMBOL>, BUY <SYMBOL> <FRACTION>
 - Before your action, briefly explain your reasoning in 1-2 sentences inside <think> tags
+- Use the FRACTION parameter (0.0-1.0) to size positions based on conviction and risk
+
+Risk Management:
+- Check your portfolio drawdown and trading capacity before entering trades
+- If on a losing streak (3+ consecutive losses), reduce exposure or wait
+- Positions held longer than 5 days incur holding costs — plan your exits
+- When drawdown exceeds 3%, your trading capacity is reduced — size down accordingly
 
 Example response:
 <think>RSI is 25 (oversold) and MACD just turned bullish. Volume is spiking. Good entry point.</think>

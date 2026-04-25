@@ -19,17 +19,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s — %(message)s")
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are an expert stock trader operating in the Indian equity market.\n"
-    "You receive daily market observations with technical indicators and must decide on a trading action.\n\n"
-    "Rules:\n"
-    "- Respond with EXACTLY one action on the last line\n"
-    "- Valid actions: HOLD, BUY, SELL, BUY <SYMBOL>, SELL <SYMBOL>, BUY <SYMBOL> <FRACTION>\n"
-    "- Before your action, briefly explain your reasoning in 1-2 sentences inside <think> tags\n\n"
-    "Example response:\n"
-    "<think>RSI is 25 (oversold) and MACD just turned bullish. Volume is spiking. Good entry point.</think>\n"
-    "BUY RELIANCE 0.5"
-)
+from baselines.llm_agent import SYSTEM_PROMPT  # noqa: E402 — single source of truth
 
 OUTPUT_DIR = Path("/workspace/raft-data")
 
