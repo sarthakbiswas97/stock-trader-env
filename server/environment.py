@@ -7,12 +7,13 @@ from typing import Any, Optional
 
 from openenv.core.env_server.interfaces import Environment
 
-from models import TradeAction, MarketObservation, TradingState, PositionInfo
+from models import TradeAction, MarketObservation, TradingState
 from server.market_simulator import MarketSimulator
 from server.neural_simulator import NeuralSimulator
 from server.feature_engine import compute_all_features, compute_rsi, features_to_text
 from server.mistake_tracker import MistakeTracker, MistakeType
 from server.macro_data import macro_to_text
+from server.action_parser import parse_action
 from server.portfolio import Portfolio
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
@@ -86,7 +87,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         reward = 0.0
 
         # Parse action
-        parsed = self._parse_action(action.action)
+        parsed = parse_action(action.action, self._task_config)
         action_type = parsed["type"]
         symbol = parsed.get("symbol", "")
         fraction = parsed.get("fraction", 1.0)
