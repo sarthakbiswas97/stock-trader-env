@@ -47,6 +47,8 @@ TASK_EPISODE_DAYS = {
 
 TASK_INITIAL_CAPITAL = {
     "single_stock": 100_000,
+    "single_stock_costs": 100_000,
+    "multi_stock_3": 150_000,
     "portfolio": 200_000,
     "full_autonomous": 500_000,
 }
