@@ -14,7 +14,9 @@ from server.feature_engine import compute_all_features, compute_rsi, features_to
 from server.mistake_tracker import MistakeTracker, MistakeType
 from server.macro_data import macro_to_text
 from server.action_parser import parse_action
+from server.execution import execute_buy, execute_sell
 from server.portfolio import Portfolio
+from server.reward import evaluate_hold, compute_holding_cost, compute_streak_penalty, get_worst_position_pnl
 from server.tasks import TASK_CONFIGS, grade_single_stock, grade_portfolio, grade_full_autonomous
 from server import __version__
 
@@ -109,13 +111,24 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
                 else:
                     self._portfolio.regime_respected += 1  # Respected
 
+        # Streak penalty — penalize buying on a losing streak
+        reward += compute_streak_penalty(self._portfolio, action_type)
+
         # Execute action
         if action_type == "BUY" and symbol and not regime_blocked:
-            reward += self._execute_buy(symbol, fraction, prices)
+            reward += execute_buy(
+                self._portfolio, symbol, fraction, prices,
+                self._task_config, self._sim.current_day,
+            )
         elif action_type == "SELL" and symbol:
-            reward += self._execute_sell(symbol, fraction, prices)
+            reward += execute_sell(
+                self._portfolio, symbol, fraction, prices,
+                self._task_config, self._sim.current_day,
+            )
         elif action_type == "HOLD":
-            reward += self._evaluate_hold(prices)
+            reward += evaluate_hold(
+                self._portfolio, prices, self._task_config, self._get_rsi,
+            )
 
         # Advance day
         self._sim.advance_day()
@@ -128,6 +141,9 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         # Record daily portfolio value
         self._portfolio.record_daily(new_prices)
+
+        # Position age holding cost — stale positions are expensive
+        reward -= compute_holding_cost(self._portfolio, self._sim.current_day)
 
         # Compute step reward
         value_after = self._portfolio.get_value(new_prices)
@@ -147,7 +163,7 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
         # Detect trading mistakes and apply penalties
         rsi = self._get_rsi(symbol) if symbol else None
-        worst_pnl = self._get_worst_position_pnl(new_prices)
+        worst_pnl = get_worst_position_pnl(self._portfolio, new_prices)
         detected = self._mistake_tracker.detect_mistakes(
             day=self._sim.current_day,
             action_type=action_type,
@@ -192,149 +208,9 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
         except (IndexError, KeyError, ValueError):
             return None
 
-    def _get_worst_position_pnl(self, prices: dict[str, float]) -> float | None:
-        if not self._portfolio or not self._portfolio.positions:
-            return None
-        worst = 0.0
-        for sym, pos in self._portfolio.positions.items():
-            price = prices.get(sym, pos["avg_price"])
-            pnl = (price - pos["avg_price"]) / pos["avg_price"] * 100 if pos["avg_price"] > 0 else 0.0
-            worst = min(worst, pnl)
-        return worst
-
-    def _evaluate_hold(self, prices: dict[str, float]) -> float:
-        """Evaluate HOLD quality based on market signals and portfolio state.
-
-        Returns a small reward/penalty:
-          - Missed opportunity (strong signal ignored): -0.15
-          - Holding a losing position: -0.1
-          - Justified patience (no clear signal): +0.01
-        """
-        has_positions = bool(self._portfolio and self._portfolio.positions)
-        worst_pnl = self._get_worst_position_pnl(prices)
-
-        # Check RSI across all task symbols for actionable signals
-        extreme_rsi = False
-        for sym in self._task_config["symbols"]:
-            rsi = self._get_rsi(sym)
-            if rsi is not None and (rsi < 25 or rsi > 75):
-                extreme_rsi = True
-                break
-
-        # Holding a losing position (> 5% drawdown) — should cut losses
-        if has_positions and worst_pnl is not None and worst_pnl < -5.0:
-            return -0.1
-
-        # Strong signal ignored — missed opportunity
-        if extreme_rsi:
-            return -0.15
-
-        # No strong signal — justified patience
-        return 0.01
 
     # --- Private methods ---
 
-    def _execute_buy(self, symbol: str, fraction: float, prices: dict) -> float:
-        """Execute a buy order. Returns reward adjustment."""
-        config = self._task_config
-        portfolio = self._portfolio
-        price = prices[symbol]
-
-        # Check trade limit
-        if portfolio.trades_today >= config["max_trades_per_day"]:
-            portfolio.risk_violations += 1
-            return -0.1
-
-        # Check position limit per stock
-        current_value = portfolio.get_value(prices)
-        existing_value = 0
-        if symbol in portfolio.positions:
-            existing_value = portfolio.positions[symbol]["qty"] * price
-        max_for_stock = current_value * config["position_limit_per_stock"]
-        available_for_stock = max(0, max_for_stock - existing_value)
-
-        # Calculate order size
-        buy_amount = min(portfolio.cash * fraction, available_for_stock)
-        if buy_amount < price:
-            return 0.0  # Can't afford even 1 share
-
-        # Apply slippage and costs
-        effective_price = price * (1 + config["slippage"])
-        cost = buy_amount * config["transaction_cost"]
-        qty = int((buy_amount - cost) / effective_price)
-        if qty <= 0:
-            return 0.0
-
-        total_cost = qty * effective_price + cost
-        portfolio.cash -= total_cost
-
-        if symbol in portfolio.positions:
-            old = portfolio.positions[symbol]
-            new_qty = old["qty"] + qty
-            new_avg = (old["qty"] * old["avg_price"] + qty * effective_price) / new_qty
-            portfolio.positions[symbol] = {"qty": new_qty, "avg_price": new_avg}
-        else:
-            portfolio.positions[symbol] = {"qty": qty, "avg_price": effective_price}
-
-        portfolio.trades_today += 1
-        portfolio.total_trades += 1
-        portfolio.trade_log.append({
-            "day": self._sim.current_day,
-            "action": "BUY",
-            "symbol": symbol,
-            "qty": qty,
-            "price": effective_price,
-        })
-
-        return 0.0  # Neutral — reward comes from P&L
-
-    def _execute_sell(self, symbol: str, fraction: float, prices: dict) -> float:
-        """Execute a sell order. Fraction controls how much of the position to sell."""
-        config = self._task_config
-        portfolio = self._portfolio
-
-        if symbol not in portfolio.positions:
-            return -0.05  # Penalty for trying to sell what you don't own
-
-        pos = portfolio.positions[symbol]
-        price = prices[symbol]
-
-        # Compute quantity to sell
-        sell_qty = int(pos["qty"] * fraction)
-        if sell_qty <= 0:
-            return 0.0  # Nothing to sell at this fraction
-
-        # Apply slippage and costs
-        effective_price = price * (1 - config["slippage"])
-        proceeds = sell_qty * effective_price
-        cost = proceeds * config["transaction_cost"]
-        net_proceeds = proceeds - cost
-
-        portfolio.cash += net_proceeds
-
-        # Calculate trade P&L for logging
-        trade_pnl = (effective_price - pos["avg_price"]) / pos["avg_price"] if pos["avg_price"] > 0 else 0.0
-
-        portfolio.trade_log.append({
-            "day": self._sim.current_day,
-            "action": "SELL",
-            "symbol": symbol,
-            "qty": sell_qty,
-            "price": effective_price,
-            "pnl_pct": round(trade_pnl * 100, 2),
-        })
-
-        # Update or remove position
-        remaining = pos["qty"] - sell_qty
-        if remaining > 0:
-            portfolio.positions[symbol] = {"qty": remaining, "avg_price": pos["avg_price"]}
-        else:
-            del portfolio.positions[symbol]
-
-        portfolio.trades_today += 1
-        portfolio.total_trades += 1
-
-        return 0.0
 
     def _build_observation(self, reward: float) -> MarketObservation:
         """Build the observation for the current state."""
