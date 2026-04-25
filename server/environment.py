@@ -234,41 +234,6 @@ class StockTradingEnvironment(Environment[TradeAction, MarketObservation, Tradin
 
     # --- Private methods ---
 
-    def _parse_action(self, action_str: str) -> dict:
-        """Parse action string like 'BUY RELIANCE 0.3' or 'HOLD'."""
-        parts = action_str.strip().upper().split()
-        if not parts:
-            return {"type": "HOLD"}
-
-        action_type = parts[0]
-        if action_type not in ("BUY", "SELL", "HOLD"):
-            return {"type": "HOLD"}
-
-        if action_type == "HOLD":
-            return {"type": "HOLD"}
-
-        # For single_stock task, default symbol
-        if len(parts) == 1 and len(self._task_config["symbols"]) == 1:
-            symbol = self._task_config["symbols"][0]
-        elif len(parts) >= 2:
-            symbol = parts[1]
-        else:
-            return {"type": "HOLD"}
-
-        # Validate symbol
-        if symbol not in self._task_config["symbols"]:
-            return {"type": "HOLD"}
-
-        fraction = 1.0
-        if len(parts) >= 3:
-            try:
-                fraction = float(parts[2])
-                fraction = max(0.0, min(1.0, fraction))
-            except ValueError:
-                fraction = 1.0
-
-        return {"type": action_type, "symbol": symbol, "fraction": fraction}
-
     def _execute_buy(self, symbol: str, fraction: float, prices: dict) -> float:
         """Execute a buy order. Returns reward adjustment."""
         config = self._task_config
