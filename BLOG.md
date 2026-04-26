@@ -1,4 +1,4 @@
-# 11 Models, 4 Crashes, and a Neural Environment That Fights Back
+# 11 Models, Multiple Crashes, and a Neural Environment That Fights Back
 
 In trading, past patterns don't guarantee future results. I learned this the hard way not from the market, but from training RL agents that kept finding ways to cheat.
 
@@ -83,7 +83,7 @@ Eval score: 0.301. Worse than the untrained base model.
 
 KL divergence had climbed to 4.2. The model forgot how to trade. Strong training metrics, destroyed knowledge. The dashboard looked great while the patient was dying.
 
-This was the lowest point. Four GRPO attempts, and none of them beat basic SFT. I was starting to wonder if RL was even the right approach for this problem.
+This was the lowest point. Multiple GRPO attempts, and none of them beat basic SFT. I was starting to wonder if RL was even the right approach for this problem.
 
 ---
 
@@ -101,7 +101,7 @@ The [SFT v3 model](https://huggingface.co/sarthakbiswas/stock-trader-sft-v3-mode
 
 ## The neural environment: Why static replay is broken
 
-Every experiment so far used static replay -- the environment plays back the same historical CSV data. Same price sequences, same indicators, same patterns. The agent can memorize "buy on day 7 of this RELIANCE sequence" and score well without learning anything about trading.
+Every experiment so far used static replay. The environment plays back the same historical CSV data. Same price sequences, same indicators, same patterns. The agent can memorize "buy on day 7 of this RELIANCE sequence" and score well without learning anything about trading.
 
 Real markets are stochastic. Tomorrow won't look like any day in the training data. An agent that memorized price sequences has learned nothing transferable.
 
@@ -111,7 +111,7 @@ The neural simulator is a drop-in replacement for CSV replay(the static one had 
 
 What the environment provides as learning signals:
 - **Signal-based HOLD evaluation**: HOLD is not free. If RSI is below 25 and the agent HOLDs, that's a missed opportunity and it gets penalized. If indicators are neutral and the agent HOLDs, that's justified patience and it gets a small positive signal. The agent has to justify not trading.
-- **Mistake tracking**: Seven specific error types detected in real-time -- regime violations, overbought buys, oversold sells, position limit breaches, loss holds, missed opportunities. Each feeds directly into the step reward.
+- **Mistake tracking**: Seven specific error types detected in real-time: regime violations, overbought buys, oversold sells, position limit breaches, loss holds, missed opportunities. Each feeds directly into the step reward.
 - **Drawdown-based capacity scaling**: As the portfolio draws down, trading capacity shrinks from 100% to 25%. The agent learns to trade smaller when it's losing.
 - **Position holding costs**: Holding a position beyond 5 days incurs a daily cost. Forces the agent to think about exit timing, not just entry.
 
@@ -125,8 +125,8 @@ Everything before this was setup. SFT v3 gave me a model that could trade. The n
 
 I collected 1,000 prompts from 50 episodes against the neural environment (mean score 0.395, 36% of episodes above 0.5). Then ran GRPO with settings designed to avoid every previous failure:
 - Started from SFT v3 (best model, not from a failed GRPO checkpoint)
-- 300 steps (not 1000 -- shorter means less KL drift)
-- beta=0.05 (not 0.01 -- stronger constraint against forgetting)
+- 300 steps (not 1000, shorter means less KL drift)
+- beta=0.05 (not 0.01, stronger constraint against forgetting)
 - Format as gate only (not reward source)
 - Neural env prompts (can't memorize)
 
@@ -134,7 +134,7 @@ The [GRPO neural model](https://huggingface.co/sarthakbiswas/stock-trader-grpo-n
 
 That's **79%** improvement over the base model on neural env. For the first time, RL actually helped instead of hurting.
 
-Why it worked when four previous GRPO attempts failed:
+Why it worked when previous GRPO attempts failed:
 1. Better starting point (SFT v3, not SFT v2)
 2. Better reward (aligned with what eval actually measures)
 3. Better environment (stochastic, agent can't memorize now)
@@ -161,20 +161,20 @@ Every model I trained, in order. The failures matter as much as the successes.
 | # | Model | Static | Neural | What happened |
 |---|-------|--------|--------|---------------|
 | 1 | [DeepSeek 7B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) (base) | 0.300 | 0.298 | Can't follow format, defaults to HOLD |
-| 2 | SFT v1 | 0.300 | -- | 91% HOLD -- data imbalance |
-| 3 | [SFT v2](https://huggingface.co/sarthakbiswas/stock-trader-sft-v2-model) | 0.398 | -- | Template reasoning, first active trading |
-| 4 | GRPO v1 | ~0.300 | -- | Collapsed to HOLD (zero-cost inaction) |
-| 5 | [GRPO v2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v2-model) | 0.326 | -- | 84% reward from formatting |
-| 6 | [GRPO v2.1](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v2.1-model) | 0.395 | -- | Reward-aligned, bimodal (10/20 at 0.6) |
-| 7 | GRPO v3 | 0.301 | -- | KL catastrophe (4.2), forgot everything |
-| 8 | [SFT v3](https://huggingface.co/sarthakbiswas/stock-trader-sft-v3-model) step-352 | 0.383 | -- | Overtrained, lower loss worse score |
+| 2 | SFT v1 | 0.300 | - | 91% HOLD, data imbalance |
+| 3 | [SFT v2](https://huggingface.co/sarthakbiswas/stock-trader-sft-v2-model) | 0.398 | - | Template reasoning, first active trading |
+| 4 | GRPO v1 | ~0.300 | - | Collapsed to HOLD (zero-cost inaction) |
+| 5 | [GRPO v2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v2-model) | 0.326 | - | 84% reward from formatting |
+| 6 | [GRPO v2.1](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v2.1-model) | 0.395 | - | Reward-aligned, bimodal (10/20 at 0.6) |
+| 7 | GRPO v3 | 0.301 | - | KL catastrophe (4.2), forgot everything |
+| 8 | [SFT v3](https://huggingface.co/sarthakbiswas/stock-trader-sft-v3-model) step-352 | 0.383 | - | Overtrained, lower loss worse score |
 | 9 | [SFT v3](https://huggingface.co/sarthakbiswas/stock-trader-sft-v3-model) step-200 | 0.399 | 0.417 | Distilled reasoning, best SFT |
 | 10 | RAFT (from base) | 0.300 | 0.300 | Wrong starting point, pure HOLD |
 | 11 | RAFT v2 (from SFT v3) | 0.360 | 0.399 | 640 winners, slight degradation |
-| 12 | [GRPO neural](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) | 0.470 | **0.537** | **Best model -- RL against neural env** |
+| 12 | [GRPO neural](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) | 0.470 | **0.537** | **Best model, RL against neural env** |
 | 13 | [GRPO v3.1](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.1-model) | 0.418 | 0.310 | Improved env (harder rewards) |
-| 14 | [GRPO v3.2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.2-model) ckpt-400 | -- | 0.485 | Improved env, HOLD% 95->85% |
-| 15 | [GRPO v3.3](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.3-model) | -- | 0.416 | Lower beta, shorter run, didn't converge |
+| 14 | [GRPO v3.2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.2-model) ckpt-400 | - | 0.485 | Improved env, HOLD% 95->85% |
+| 15 | [GRPO v3.3](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.3-model) | - | 0.416 | Lower beta, shorter run, didn't converge |
 
 ### Training curves from real runs
 
