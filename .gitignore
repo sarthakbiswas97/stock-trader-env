@@ -22,7 +22,8 @@ social/
 .progress/
 notebooks/*.log
 checkpoints/
-# results/ — now tracked for submission evidence
+results/*.png
+results/*.db
 data/ohlcv/
 data/macro/
 data/sft/

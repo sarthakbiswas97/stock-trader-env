@@ -178,7 +178,7 @@ Every model I trained, in order. The failures matter as much as the successes.
 
 ### Training curves from real runs
 
-![Training curves: learning curve, SFT loss, GRPO KL divergence, trading reward](results/training_curves_final.png)
+![Training curves: learning curve, SFT loss, GRPO KL divergence, trading reward](https://raw.githubusercontent.com/sarthakbiswas97/stock-trader-env/v3/world-model/results/training_curves_final.png)
 
 *Top-left: Score progression across training stages. Top-right: SFT loss (best checkpoint at step 200). Bottom-left: GRPO KL stayed under 0.35 (previous v3 hit 4.2). Bottom-right: Trading reward over 300 steps.*
 

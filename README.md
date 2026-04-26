@@ -265,17 +265,17 @@ Training used [TRL GRPOTrainer](https://huggingface.co/docs/trl/grpo_trainer) + 
 
 ### Training Curves (from real runs)
 
-![Training curves: SFT loss, GRPO KL divergence, trading reward, and learning curve showing 0.300 to 0.537 improvement](results/training_curves_final.png)
+![Training curves: SFT loss, GRPO KL divergence, trading reward, and learning curve showing 0.300 to 0.537 improvement](https://raw.githubusercontent.com/sarthakbiswas97/stock-trader-env/v3/world-model/results/training_curves_final.png)
 
 *Top-left: Learning curve across training stages. Top-right: SFT training loss (best checkpoint at step 200, not final step). Bottom-left: GRPO KL divergence stayed under 0.35 (previous run hit 4.2 and collapsed). Bottom-right: GRPO trading reward signal over 300 steps.*
 
 ### World Model: Neural vs Static Environment
 
-![Causal transformer world model comparison: volatility ratio, MAE, direction accuracy, and sample price trajectories](results/comparison_results.png)
+![Causal transformer world model comparison: volatility ratio, MAE, direction accuracy, and sample price trajectories](https://raw.githubusercontent.com/sarthakbiswas97/stock-trader-env/v3/world-model/results/comparison_results.png)
 
 *Causal transformer (1.22M params) achieves 0.94x real-market volatility with 3x lower prediction error than CNN+GRU baseline. Every episode generates unique price trajectories the agent has never seen.*
 
-Training logs and eval results: [results/](results/)
+Training logs and eval results in [results/](https://github.com/sarthakbiswas97/stock-trader-env/tree/main/results)
 
 ## Baseline Scores
 
