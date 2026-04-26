@@ -28,13 +28,13 @@ A real-world OpenEnv environment that simulates daily stock trading on Indian eq
 | Best Model (GRPO, 0.537) | [HF Hub](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) |
 | Market Data (264K rows) | [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data) |
 | Training Data (10K distilled) | [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-sft-v3) |
-| GitHub | [Repository](https://github.com/sarthakbiswas97/stock-trader-env/tree/v3/world-model) |
+| GitHub | [Repository](https://github.com/sarthakbiswas97/stock-trader-env) |
 
 Built for the [Meta PyTorch OpenEnv Hackathon](https://pytorch.org/blog/openenv/) (Theme 3: World Modeling + Theme 4: Self-Improvement).
 
 ## Why This Environment?
 
-Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 68 NIFTY stocks (NIFTY 50 + select NIFTY 100) spanning ~5 years of market history.
+Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 109 NIFTY stocks spanning 2015-2026 (~264,000 rows of market history).
 
 Unlike toy environments, agents must deal with:
 - **Transaction costs and slippage** that eat into returns
@@ -261,7 +261,21 @@ A 1.22M parameter causal transformer trained on the market data generates synthe
 | [GRPO v3.2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.2-model) ckpt-400 | - | 0.485 | RL against improved neural env |
 | **[GRPO neural](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model)** | **0.470** | **0.537** | **RL against neural env (best)** |
 
-Training used [TRL GRPOTrainer](https://huggingface.co/docs/trl/grpo_trainer) + [Unsloth](https://github.com/unslothai/unsloth) with QLoRA on DeepSeek-R1-Distill-Qwen-7B. Training logs and reward curves in [results/](results/).
+Training used [TRL GRPOTrainer](https://huggingface.co/docs/trl/grpo_trainer) + [Unsloth](https://github.com/unslothai/unsloth) with QLoRA on DeepSeek-R1-Distill-Qwen-7B.
+
+### Training Curves (from real runs)
+
+![Training curves: SFT loss, GRPO KL divergence, trading reward, and learning curve showing 0.300 to 0.537 improvement](results/training_curves_final.png)
+
+*Top-left: Learning curve across training stages. Top-right: SFT training loss (best checkpoint at step 200, not final step). Bottom-left: GRPO KL divergence stayed under 0.35 (previous run hit 4.2 and collapsed). Bottom-right: GRPO trading reward signal over 300 steps.*
+
+### World Model: Neural vs Static Environment
+
+![Causal transformer world model comparison: volatility ratio, MAE, direction accuracy, and sample price trajectories](results/comparison_results.png)
+
+*Causal transformer (1.22M params) achieves 0.94x real-market volatility with 3x lower prediction error than CNN+GRU baseline. Every episode generates unique price trajectories the agent has never seen.*
+
+Training logs and eval results: [results/](results/)
 
 ## Baseline Scores
 

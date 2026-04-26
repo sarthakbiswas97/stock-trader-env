@@ -4,7 +4,7 @@ In trading, past patterns don't guarantee future results. I learned this the har
 
 This project started as a stock trading environment for the [Meta PyTorch OpenEnv Hackathon](https://pytorch.org/blog/openenv/). But along the way it became something bigger: a case study in how the environment you train against shapes what the model actually learns. The same idea applies to code generation, scientific reasoning, planning anywhere a model needs to make decisions under uncertainty. The environment is the teacher. If the teacher is predictable, the student learns shortcuts.
 
-You can try the live environment here: [stock-trader-env on HF Spaces](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env). The full code is on [GitHub](https://github.com/sarthakbiswas97/stock-trader-env/tree/v3/world-model).
+You can try the live environment here: [stock-trader-env on HF Spaces](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env). The full code is on [GitHub](https://github.com/sarthakbiswas97/stock-trader-env).
 
 ---
 
@@ -130,7 +130,7 @@ I collected 1,000 prompts from 50 episodes against the neural environment (mean 
 - Format as gate only (not reward source)
 - Neural env prompts (can't memorize)
 
-The [GRPO neural model](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) scored 0.537 on neural environment and 0.470 on static replay ([eval results](https://github.com/sarthakbiswas97/stock-trader-env/blob/v3/world-model/results/grpo_neural_eval.json) in repo). KL stayed under 0.35 the entire run. No catastrophe. No collapse.
+The [GRPO neural model](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) scored 0.537 on neural environment and 0.470 on static replay ([eval results](https://github.com/sarthakbiswas97/stock-trader-env/blob/main/results/grpo_neural_eval.json) in repo). KL stayed under 0.35 the entire run. No catastrophe. No collapse.
 
 That's **79%** improvement over the base model on neural env. For the first time, RL actually helped instead of hurting.
 
@@ -176,7 +176,13 @@ Every model I trained, in order. The failures matter as much as the successes.
 | 14 | [GRPO v3.2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.2-model) ckpt-400 | -- | 0.485 | Improved env, HOLD% 95->85% |
 | 15 | [GRPO v3.3](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.3-model) | -- | 0.416 | Lower beta, shorter run, didn't converge |
 
-Training logs and reward curves are in the [results/ directory](https://github.com/sarthakbiswas97/stock-trader-env/tree/v3/world-model/results) of the repo.
+### Training curves from real runs
+
+![Training curves: learning curve, SFT loss, GRPO KL divergence, trading reward](results/training_curves_final.png)
+
+*Top-left: Score progression across training stages. Top-right: SFT loss (best checkpoint at step 200). Bottom-left: GRPO KL stayed under 0.35 (previous v3 hit 4.2). Bottom-right: Trading reward over 300 steps.*
+
+Training logs and eval JSONs are in the [results/](https://github.com/sarthakbiswas97/stock-trader-env/tree/main/results) directory.
 
 ---
 
@@ -205,11 +211,11 @@ The reward function is not just a technical detail. It's the most important desi
 ## Resources
 
 - **Live environment**: [HF Space](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env)
-- **Code**: [GitHub](https://github.com/sarthakbiswas97/stock-trader-env/tree/v3/world-model)
+- **Code**: [GitHub](https://github.com/sarthakbiswas97/stock-trader-env)
 - **Best model (GRPO neural, 0.537)**: [HF Hub](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model)
 - **Market data (264K rows, 109 stocks)**: [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data)
 - **SFT v3 training data (10K distilled)**: [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-sft-v3)
-- **Training logs and curves**: [results/](https://github.com/sarthakbiswas97/stock-trader-env/tree/v3/world-model/results) in the repo
+- **Training logs and curves**: [results/](https://github.com/sarthakbiswas97/stock-trader-env/tree/main/results)
 - **Training notebook**: [Colab](https://colab.research.google.com/)
 
 Built by Sarthak Biswas for the Meta PyTorch OpenEnv Hackathon, April 2026.
