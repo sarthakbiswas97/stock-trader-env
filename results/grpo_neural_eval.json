@@ -1,0 +1,7 @@
+{
+  "description": "GRPO trained against neural env from SFT v3 — BEST MODEL",
+  "replay": {"score": 0.470, "std": 0.160, "return": 0.0085, "sharpe": 0.41, "episodes": 5, "scores": [0.6, 0.6, 0.6, 0.256, 0.294]},
+  "neural": {"score": 0.537, "std": 0.126, "return": 0.0088, "sharpe": 0.84, "episodes": 5, "scores": [0.6, 0.6, 0.286, 0.6, 0.6]},
+  "config": {"steps": 300, "G": 4, "beta": 0.05, "lr": "5e-7", "prompts": 1000, "from": "SFT v3"},
+  "hf_model": "sarthakbiswas/stock-trader-grpo-neural-model"
+}

@@ -1,0 +1,35 @@
+# Training dependencies for RunPod
+# Install with:
+#   pip install --ignore-installed blinker
+#   pip install --upgrade typing_extensions
+#   pip install -r requirements-training.txt
+#   pip install -e .
+#   # Patch llm_blender for transformers 5.x compat:
+#   find /usr/local/lib/python3.11/dist-packages/llm_blender/ -name "*.py" \
+#     -exec sed -i "s/from transformers.utils.hub import TRANSFORMERS_CACHE/from huggingface_hub.constants import HF_HUB_CACHE as TRANSFORMERS_CACHE/g" {} +
+
+# Base project deps
+-r requirements.txt
+
+# Must be upgraded before unsloth/trl
+typing_extensions>=4.12
+
+# Core ML
+gymnasium
+mlflow
+datasets
+huggingface_hub
+tqdm
+
+# Unsloth
+unsloth
+unsloth_zoo
+
+# TRL + GRPO (trl unconditionally imports mergekit, llm_blender, weave)
+trl
+mergekit
+llm_blender
+weave
+
+# Stable Baselines (PPO baseline)
+stable-baselines3

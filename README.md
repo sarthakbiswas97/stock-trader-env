@@ -14,11 +14,27 @@ tags:
 
 # Stock Trading RL Environment
 
-A real-world OpenEnv environment that simulates daily stock trading on Indian equity markets (NIFTY stocks) using real historical OHLCV data. LLM agents connect via HTTP/WebSocket, receive market observations with technical indicators, and respond with trade actions.
+A real-world OpenEnv environment that simulates daily stock trading on Indian equity markets (NIFTY stocks). Features a **neural world model** (1.22M param causal transformer) that generates novel market scenarios, forcing LLM agents to learn genuine trading intuition instead of memorizing historical data.
+
+**Result: Base model 0.300 -> SFT 0.417 -> GRPO 0.537 (79% improvement)**
+
+## Hackathon Submission
+
+| Resource | Link |
+|----------|------|
+| Live Environment | [HF Space](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env) |
+| Training Notebook | [Colab](https://colab.research.google.com/) |
+| Blog Post | [BLOG.md](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env/blob/main/BLOG.md) |
+| Best Model (GRPO, 0.537) | [HF Hub](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) |
+| Market Data (264K rows) | [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data) |
+| Training Data (10K distilled) | [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-sft-v3) |
+| GitHub | [Repository](https://github.com/sarthakbiswas97/stock-trader-env) |
+
+Built for the [Meta PyTorch OpenEnv Hackathon](https://pytorch.org/blog/openenv/) (Theme 3: World Modeling + Theme 4: Self-Improvement).
 
 ## Why This Environment?
 
-Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 68 NIFTY stocks (NIFTY 50 + select NIFTY 100) spanning ~5 years of market history.
+Stock trading is one of the most genuine real-world decision-making tasks — it requires reading market signals, managing risk, sizing positions, and knowing when NOT to act. This environment captures that complexity across 3 difficulty levels, using real price data from 109 NIFTY stocks spanning 2015-2026 (~264,000 rows of market history).
 
 Unlike toy environments, agents must deal with:
 - **Transaction costs and slippage** that eat into returns
@@ -228,7 +244,38 @@ Reward values range from approximately -0.30 to +0.20 per step, providing rich g
 
 ## Market Data
 
-Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 100) stored in `data/ohlcv/`, spanning ~5 years of market history. Each episode picks a random start window (with 50-day lookback buffer for indicator computation), ensuring diverse market conditions across runs.
+Real historical daily OHLCV data for [109 NIFTY stocks](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data) (NIFTY 50 + select NIFTY 100) spanning 2015-2026 (~264,000 rows). Each episode picks a random start window (with 50-day lookback buffer for indicator computation), ensuring diverse market conditions across runs.
+
+## Neural World Model
+
+A 1.22M parameter causal transformer trained on the market data generates synthetic but realistic OHLCV prices. Volatility calibration: 0.94x real markets. Every episode is stochastic, the agent cannot memorize its way to a high score. The world model is a drop-in replacement for static CSV replay.
+
+## Training Results
+
+15 model iterations across SFT, RAFT, and GRPO. Full details in [BLOG.md](BLOG.md).
+
+| Model | Static Env | Neural Env | Method |
+|-------|-----------|-----------|--------|
+| [DeepSeek 7B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) (base) | 0.300 | 0.298 | No training |
+| [SFT v3](https://huggingface.co/sarthakbiswas/stock-trader-sft-v3-model) (distilled) | 0.399 | 0.417 | 10K reverse-distilled examples |
+| [GRPO v3.2](https://huggingface.co/sarthakbiswas/stock-trader-grpo-v3.2-model) ckpt-400 | - | 0.485 | RL against improved neural env |
+| **[GRPO neural](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model)** | **0.470** | **0.537** | **RL against neural env (best)** |
+
+Training used [TRL GRPOTrainer](https://huggingface.co/docs/trl/grpo_trainer) + [Unsloth](https://github.com/unslothai/unsloth) with QLoRA on DeepSeek-R1-Distill-Qwen-7B.
+
+### Training Curves (from real runs)
+
+![Training curves: SFT loss, GRPO KL divergence, trading reward, and learning curve showing 0.300 to 0.537 improvement](results/training_curves_final.png)
+
+*Top-left: Learning curve across training stages. Top-right: SFT training loss (best checkpoint at step 200, not final step). Bottom-left: GRPO KL divergence stayed under 0.35 (previous run hit 4.2 and collapsed). Bottom-right: GRPO trading reward signal over 300 steps.*
+
+### World Model: Neural vs Static Environment
+
+![Causal transformer world model comparison: volatility ratio, MAE, direction accuracy, and sample price trajectories](results/comparison_results.png)
+
+*Causal transformer (1.22M params) achieves 0.94x real-market volatility with 3x lower prediction error than CNN+GRU baseline. Every episode generates unique price trajectories the agent has never seen.*
+
+Training logs and eval results: [results/](results/)
 
 ## Baseline Scores
 
@@ -245,18 +292,36 @@ Real historical daily OHLCV data for 68 NIFTY stocks (NIFTY 50 + select NIFTY 10
 ```
 stock-trader-env/
 ├── server/
-│   ├── app.py              # OpenEnv server (via create_app)
-│   ├── environment.py      # Core RL environment (reset/step/state)
-│   ├── market_simulator.py # Historical data replay
-│   ├── feature_engine.py   # Technical indicators → text
-│   └── tasks.py            # Task configs + grading functions
-├── data/ohlcv/             # 68 NIFTY stock CSVs (~5 years daily)
-├── models.py               # Pydantic data contracts
-├── client.py               # Typed OpenEnv client
-├── inference.py            # Baseline LLM agent
-├── openenv.yaml            # OpenEnv metadata
-├── Dockerfile              # Container definition
-└── requirements.txt        # Python dependencies
+│   ├── app.py                # OpenEnv server (via create_app)
+│   ├── environment.py        # Core RL environment orchestrator
+│   ├── portfolio.py          # Portfolio tracking, drawdown, risk
+│   ├── action_parser.py      # Action string parsing
+│   ├── execution.py          # Trade execution with capacity scaling
+│   ├── reward.py             # HOLD evaluation, holding costs, streak penalties
+│   ├── observation_builder.py # Text observation with risk summary
+│   ├── market_simulator.py   # Historical data replay
+│   ├── neural_simulator.py   # Neural world model (causal transformer)
+│   ├── feature_engine.py     # Technical indicators to text
+│   ├── mistake_tracker.py    # 7-type trading error detection
+│   └── tasks.py              # Task configs + grading functions
+├── scripts/
+│   ├── train_grpo.py         # GRPO training (TRL + Unsloth)
+│   ├── train_sft.py          # SFT training
+│   ├── eval_sft.py           # Model evaluation
+│   └── collect_model_episodes.py  # Episode collection for RAFT/GRPO
+├── training/
+│   ├── gym_wrapper.py        # Gymnasium wrapper
+│   ├── evaluate.py           # Standardized eval harness
+│   └── judge_prompt.py       # LLM-as-Judge rubric
+├── results/                  # Training logs, eval JSONs, plots
+├── notebooks/                # Training notebook
+├── BLOG.md                   # Hackathon blog post
+├── models.py                 # Pydantic data contracts
+├── client.py                 # Typed OpenEnv client
+├── inference.py              # Baseline LLM agent
+├── openenv.yaml              # OpenEnv metadata
+├── Dockerfile                # Container definition
+└── requirements.txt          # Python dependencies
 ```
 
 ## License

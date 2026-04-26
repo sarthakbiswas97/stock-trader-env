@@ -19,7 +19,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 TRADER_SESSION = Path(__file__).parent.parent.parent / "trader" / ".kite_session"
 KITE_API_KEY = "es57jly5mimjlreh"
 
-# NIFTY 50 stocks (full universe)
+# NIFTY 50 stocks (core universe)
 NIFTY_50 = [
     "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
     "HINDUNILVR", "SBIN", "BHARTIARTL", "ITC", "KOTAKBANK",
@@ -33,12 +33,21 @@ NIFTY_50 = [
     "HINDALCO", "BAJAJ-AUTO", "SHRIRAMFIN", "TRENT",
 ]
 
-# Extra NIFTY 100 stocks for more diversity
+# NIFTY 100 stocks beyond NIFTY 50 (full NIFTY 100 coverage)
 NIFTY_100_EXTRA = [
+    # Already downloaded (20)
     "HDFCLIFE", "DABUR", "PIDILITIND", "HAVELLS", "DLF",
     "GODREJCP", "COLPAL", "LUPIN", "AUROPHARMA", "BANKBARODA",
     "PNB", "IOC", "GAIL", "BEL", "IRCTC",
     "POLYCAB", "SRF", "PERSISTENT", "TATAPOWER", "NHPC",
+    # New additions to reach NIFTY 100
+    "ADANIGREEN", "AMBUJACEM", "ATGL", "BOSCHLTD", "CANBK",
+    "CGPOWER", "CHOLAFIN", "ICICIGI", "ICICIPRULI", "INDHOTEL",
+    "IRFC", "JINDALSTEL", "JSWENERGY", "LICI", "LTIM",
+    "MANKIND", "MAXHEALTH", "MOTHERSON", "NMDC", "OBEROIRLTY",
+    "PFC", "RECLTD", "SBICARD", "SHREECEM", "SIEMENS",
+    "TATAELXSI", "TORNTPHARM", "VBL", "VEDL", "ZOMATO",
+    "ZYDUSLIFE",
 ]
 
 ALL_SYMBOLS = NIFTY_50 + NIFTY_100_EXTRA

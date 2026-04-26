@@ -5,7 +5,26 @@ __pycache__/
 dist/
 build/
 .env
-inference_results.json
 .DS_Store
+.coverage
+.pytest_cache/
+data/llm_cache.db
+.ruff_cache/
+mlflow.db
+mlruns/
+inference_results.json
 validate-submission.sh
 CLAUDE.md
+notes.md
+work-report.md
+research.md
+social/
+.progress/
+notebooks/*.log
+checkpoints/
+# results/ — now tracked for submission evidence
+data/ohlcv/
+data/macro/
+data/sft/
+data/grpo/
+world_model/transformer_building_blocks.ipynb

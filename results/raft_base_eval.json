@@ -1,0 +1,6 @@
+{
+  "description": "RAFT trained from BASE model (wrong - should have been SFT v3)",
+  "replay": {"score": 0.300, "return": 0.00, "sharpe": 0.00, "episodes": 5, "scores": [0.3, 0.3, 0.3, 0.3, 0.3]},
+  "neural": {"score": 0.300, "return": 0.00, "sharpe": 0.00, "episodes": 5, "scores": [0.3, 0.3, 0.3, 0.3, 0.3]},
+  "lesson": "RAFT without SFT foundation = base model behavior. 640 examples at lr=2e-6 cannot teach format from scratch."
+}

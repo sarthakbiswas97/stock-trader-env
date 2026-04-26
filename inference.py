@@ -34,6 +34,7 @@ SEED = 42
 TASKS = ["single_stock", "portfolio", "full_autonomous"]
 SUCCESS_THRESHOLD = 0.3
 MAX_RETRIES = 3
+SIMULATOR_MODE = os.getenv("SIMULATOR_MODE", "replay")
 
 SYSTEM_PROMPT = textwrap.dedent("""
     You are an expert stock trader operating in the Indian equity market (NIFTY stocks).
@@ -146,7 +147,7 @@ async def run_task(env: GenericEnvClient, llm: OpenAI, task_id: str) -> None:
     success = False
 
     try:
-        result = await env.reset(task_id=task_id, seed=SEED)
+        result = await env.reset(task_id=task_id, seed=SEED, simulator_mode=SIMULATOR_MODE)
 
         step = 0
         max_steps = 200  # Safety limit to prevent infinite loops

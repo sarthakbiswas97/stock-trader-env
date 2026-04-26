@@ -1,9 +1,10 @@
-"""
-Task definitions and graders for the 3 difficulty levels.
-Each grader returns a deterministic score strictly between 0 and 1 (exclusive).
-"""
+"""Task definitions and graders for the 3 difficulty levels."""
+
+from __future__ import annotations
 
 import math
+
+import numpy as np
 
 # Validator requires scores in open interval (0, 1) — never exactly 0.0 or 1.0
 SCORE_MIN = 0.001
@@ -14,8 +15,18 @@ def _clamp_score(score: float) -> float:
     """Clamp score to the open interval (0, 1)."""
     return round(max(SCORE_MIN, min(SCORE_MAX, score)), 4)
 
+# Curriculum tiers ordered by difficulty (used by CurriculumManager)
+CURRICULUM_ORDER = [
+    "single_stock",
+    "single_stock_costs",
+    "multi_stock_3",
+    "portfolio",
+    "full_autonomous",
+]
+
 TASK_CONFIGS = {
     "single_stock": {
+        "version": "1.0.0",
         "name": "Single Stock Trading",
         "difficulty": "easy",
         "description": "Trade a single stock (RELIANCE) over 20 days. No transaction costs, no position limits.",
@@ -24,12 +35,43 @@ TASK_CONFIGS = {
         "symbols": ["RELIANCE"],
         "transaction_cost": 0.0,
         "slippage": 0.0,
-        "max_position_pct": 1.0,       # Can go all-in
-        "max_trades_per_day": 100,      # No limit effectively
+        "max_position_pct": 1.0,
+        "max_trades_per_day": 100,
         "regime_gate": False,
         "position_limit_per_stock": 1.0,
     },
+    "single_stock_costs": {
+        "version": "1.0.0",
+        "name": "Single Stock with Costs",
+        "difficulty": "easy-medium",
+        "description": "Trade RELIANCE with realistic transaction costs and slippage.",
+        "episode_days": 20,
+        "initial_capital": 100_000,
+        "symbols": ["RELIANCE"],
+        "transaction_cost": 0.001,
+        "slippage": 0.001,
+        "max_position_pct": 1.0,
+        "max_trades_per_day": 20,
+        "regime_gate": False,
+        "position_limit_per_stock": 1.0,
+    },
+    "multi_stock_3": {
+        "version": "1.0.0",
+        "name": "Multi-Stock (3)",
+        "difficulty": "medium-easy",
+        "description": "Trade 3 stocks with costs. Learn multi-stock position management.",
+        "episode_days": 25,
+        "initial_capital": 150_000,
+        "symbols": ["RELIANCE", "INFY", "TCS"],
+        "transaction_cost": 0.001,
+        "slippage": 0.001,
+        "max_position_pct": 0.6,
+        "max_trades_per_day": 15,
+        "regime_gate": False,
+        "position_limit_per_stock": 0.5,
+    },
     "portfolio": {
+        "version": "1.0.0",
         "name": "Portfolio Management",
         "difficulty": "medium",
         "description": "Manage a 10-stock portfolio over 30 days. Transaction costs apply, max 30% in any single stock.",
@@ -47,6 +89,7 @@ TASK_CONFIGS = {
         "position_limit_per_stock": 0.3, # Max 30% in one stock
     },
     "full_autonomous": {
+        "version": "1.0.0",
         "name": "Full Autonomous Trading",
         "difficulty": "hard",
         "description": "Trade 25 stocks over 40 days with regime gate, position limits, realistic slippage and costs. The agent must learn WHEN NOT to trade.",
@@ -75,15 +118,7 @@ def grade_single_stock(
     buy_and_hold_return: float,
     total_trades: int,
 ) -> float:
-    """
-    Grade Task 1: Single Stock Trading.
-
-    Scoring:
-    - 0.0-0.3: Lost money
-    - 0.3-0.5: Made money but below buy-and-hold
-    - 0.5-0.8: Matched or beat buy-and-hold
-    - 0.8-1.0: Significantly beat buy-and-hold
-    """
+    """Grade single stock: agent return vs buy-and-hold benchmark."""
     agent_return = (final_value - initial_capital) / initial_capital
 
     if agent_return <= -0.05:
@@ -113,30 +148,19 @@ def grade_portfolio(
     risk_violations: int,
     total_trades: int,
 ) -> float:
-    """
-    Grade Task 2: Portfolio Management.
-
-    Scoring (weighted composite):
-    - 60%: Risk-adjusted return (Sharpe-like)
-    - 25%: Discipline (risk violation penalty)
-    - 15%: Activity (not too passive, not too hyperactive)
-    """
-    # Return component
+    """Grade portfolio: 60% risk-adjusted return, 25% discipline, 15% activity."""
     agent_return = (final_value - initial_capital) / initial_capital
 
     if len(daily_returns) > 1 and any(r != 0 for r in daily_returns):
-        import numpy as np
         mean_r = np.mean(daily_returns)
         std_r = np.std(daily_returns)
         sharpe = (mean_r / std_r * math.sqrt(252)) if std_r > 0 else 0.0
-        return_score = max(0.0, min(1.0, (sharpe + 1) / 4))  # Map [-1, 3] to [0, 1]
+        return_score = max(0.0, min(1.0, (sharpe + 1) / 4))
     else:
         return_score = 0.3 if agent_return >= 0 else 0.1
 
-    # Discipline component
     discipline_score = max(0.0, 1.0 - risk_violations * 0.1)
 
-    # Activity component — penalize doing nothing OR overtrading
     episode_days = 30
     trades_per_day = total_trades / max(episode_days, 1)
     if trades_per_day < 0.1:
@@ -160,37 +184,23 @@ def grade_full_autonomous(
     total_trades: int,
     max_drawdown: float,
 ) -> float:
-    """
-    Grade Task 3: Full Autonomous Trading.
-
-    Scoring (weighted composite):
-    - 35%: Absolute return
-    - 25%: Risk-adjusted return
-    - 25%: Regime discipline (respected gate when active)
-    - 15%: Risk management (violations + drawdown)
-    """
+    """Grade full autonomous: 35% return, 25% risk-adjusted, 25% regime discipline, 15% risk mgmt."""
     agent_return = (final_value - initial_capital) / initial_capital
 
-    # Return component (35%)
     return_score = max(0.0, min(1.0, (agent_return + 0.05) / 0.15))
 
-    # Risk-adjusted component (25%)
     if len(daily_returns) > 1 and any(r != 0 for r in daily_returns):
-        import numpy as np
         mean_r = np.mean(daily_returns)
         std_r = np.std(daily_returns)
         sharpe = (mean_r / std_r * math.sqrt(252)) if std_r > 0 else 0.0
         risk_adj_score = max(0.0, min(1.0, (sharpe + 1) / 4))
     else:
         risk_adj_score = 0.2
-
-    # Regime discipline (25%)
     if regime_gated_days > 0:
         regime_score = regime_respected / regime_gated_days
     else:
         regime_score = 1.0  # No gated days = no opportunity to violate
 
-    # Risk management (15%)
     violation_penalty = max(0.0, 1.0 - risk_violations * 0.05)
     drawdown_penalty = max(0.0, 1.0 - abs(max_drawdown) / 0.15)
     risk_score = (violation_penalty + drawdown_penalty) / 2
@@ -206,6 +216,8 @@ def grade_full_autonomous(
 
 GRADERS = {
     "single_stock": grade_single_stock,
+    "single_stock_costs": grade_single_stock,
+    "multi_stock_3": grade_portfolio,
     "portfolio": grade_portfolio,
     "full_autonomous": grade_full_autonomous,
 }

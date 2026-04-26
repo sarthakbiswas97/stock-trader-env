@@ -1,6 +1,6 @@
 [project]
 name = "stock-trader-env"
-version = "1.0.0"
+version = "1.1.0"
 description = "Realistic stock trading RL environment using OpenEnv"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,6 +16,18 @@ dependencies = [
 inference = [
     "openai",
 ]
+training = [
+    "gymnasium>=1.0",
+    "mlflow>=2.0",
+    "dvc",
+]
 
 [project.scripts]
 server = "server.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.setuptools.packages.find]
+include = ["server*", "models*", "training*", "baselines*"]
