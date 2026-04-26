@@ -391,12 +391,21 @@ def _create_trainer_class():
     from trl import GRPOTrainer
 
     class ScheduledTemperatureGRPOTrainer(GRPOTrainer):
-        """GRPOTrainer with cosine temperature decay."""
+        """GRPOTrainer with cosine temperature decay and KL early stop."""
 
-        def __init__(self, *args, t_start: float = 0.9, t_end: float = 0.6, **kwargs):
+        def __init__(
+            self,
+            *args,
+            t_start: float = 0.9,
+            t_end: float = 0.6,
+            kl_early_stop: float = 0.0,
+            **kwargs,
+        ):
             super().__init__(*args, **kwargs)
             self._t_start = t_start
             self._t_end = t_end
+            self._kl_early_stop = kl_early_stop
+            self._kl_exceeded_count = 0
 
         def _generate_and_score_completions(self, inputs):
             progress = self.state.global_step / max(self.state.max_steps, 1)
@@ -412,7 +421,24 @@ def _create_trainer_class():
                     self.state.global_step, new_temp, progress * 100,
                 )
 
-            return super()._generate_and_score_completions(inputs)
+            result = super()._generate_and_score_completions(inputs)
+
+            # KL early stop: if KL exceeds threshold for 5 consecutive checks, stop
+            if self._kl_early_stop > 0 and self.state.global_step % 10 == 0:
+                kl = self.state.log_history[-1].get("kl", 0.0) if self.state.log_history else 0.0
+                if kl > self._kl_early_stop:
+                    self._kl_exceeded_count += 1
+                    logger.warning(
+                        "KL=%.3f > threshold=%.2f (%d/5 consecutive)",
+                        kl, self._kl_early_stop, self._kl_exceeded_count,
+                    )
+                    if self._kl_exceeded_count >= 5:
+                        logger.warning("KL early stop triggered at step %d", self.state.global_step)
+                        self.state.max_steps = self.state.global_step
+                else:
+                    self._kl_exceeded_count = 0
+
+            return result
 
     return ScheduledTemperatureGRPOTrainer
 
@@ -579,6 +605,7 @@ def train(args: argparse.Namespace) -> None:
     trainer = ScheduledTemperatureGRPOTrainer(
         t_start=args.t_start,
         t_end=args.t_end,
+        kl_early_stop=args.kl_early_stop,
         model=model,
         args=training_args,
         train_dataset=train_dataset,
@@ -597,6 +624,8 @@ def train(args: argparse.Namespace) -> None:
     logger.info("  Reward functions: format_gate + trading (30%% step / 70%% episode)")
     logger.info("  Scale rewards: batch (Dr. GRPO)")
     logger.info("  Anti-HOLD collapse: rolling window (%d)", _ACTION_WINDOW_SIZE)
+    if args.kl_early_stop > 0:
+        logger.info("  KL early stop: %.2f (5 consecutive checks)", args.kl_early_stop)
     logger.info("")
 
     trainer.train()
@@ -684,6 +713,7 @@ def main() -> None:
     parser.add_argument("--t-start", type=float, default=DEFAULTS["t_start"])
     parser.add_argument("--t-end", type=float, default=DEFAULTS["t_end"])
     parser.add_argument("--output-dir", default=DEFAULTS["output_dir"])
+    parser.add_argument("--kl-early-stop", type=float, default=0.0, help="Stop training if KL exceeds this threshold for 5 consecutive checks (0=disabled)")
     parser.add_argument("--use-llm-reward", action="store_true", help="Add LLM judge as third reward function (requires llm_score column in dataset)")
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--hf-repo", default="sarthakbiswas/stock-trader-grpo-v3-model")
