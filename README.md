@@ -23,7 +23,7 @@ A real-world OpenEnv environment that simulates daily stock trading on Indian eq
 | Resource | Link |
 |----------|------|
 | Live Environment | [HF Space](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env) |
-| Training Notebook | [Colab](https://colab.research.google.com/) |
+| Training Notebook | [Colab](https://colab.research.google.com/drive/1CvzjO5F53T3Hx0zCXEQrgVCFe5uWpc4Z?usp=sharing) |
 | Blog Post | [BLOG.md](https://huggingface.co/spaces/sarthakbiswas/stock-trader-env/blob/main/BLOG.md) |
 | Best Model (GRPO, 0.537) | [HF Hub](https://huggingface.co/sarthakbiswas/stock-trader-grpo-neural-model) |
 | Market Data (264K rows) | [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data) |

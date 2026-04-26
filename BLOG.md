@@ -216,7 +216,7 @@ The reward function is not just a technical detail. It's the most important desi
 - **Market data (264K rows, 109 stocks)**: [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-market-data)
 - **SFT v3 training data (10K distilled)**: [HF Dataset](https://huggingface.co/datasets/sarthakbiswas/stock-trader-sft-v3)
 - **Training logs and curves**: [results/](https://github.com/sarthakbiswas97/stock-trader-env/tree/main/results)
-- **Training notebook**: [Colab](https://colab.research.google.com/)
+- **Training notebook**: [Colab](https://colab.research.google.com/drive/1CvzjO5F53T3Hx0zCXEQrgVCFe5uWpc4Z?usp=sharing)
 
 Built by Sarthak Biswas for the Meta PyTorch OpenEnv Hackathon, April 2026.
 
