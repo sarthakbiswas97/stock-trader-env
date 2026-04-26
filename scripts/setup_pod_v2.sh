@@ -24,9 +24,8 @@ pip install -q openenv-core gymnasium mlflow immutables
 # TRL dependency stubs (mergekit, llm_blender, weave)
 pip install -q --no-deps llm_blender mergekit weave 2>/dev/null || true
 
-# Fix pydantic conflict (mcp requires <2.11, mergekit needs compatible version)
-pip install -q "pydantic>=2.0,<2.11" "mcp<1.9" 2>/dev/null || \
-pip install -q pydantic==2.10.6 2>/dev/null || true
+# Fix dependency conflicts (pydantic + mcp + fastmcp versions must align)
+pip install -q "pydantic>=2.0,<2.11" "mcp==1.6.0" "fastmcp==1.5.0" 2>/dev/null || true
 
 # Patch TRANSFORMERS_CACHE (llm_blender needs it, transformers 5.x removed it)
 python3 -c "

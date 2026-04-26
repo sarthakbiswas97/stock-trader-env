@@ -8,3 +8,5 @@ openai
 httpx
 yfinance
 torch
+datasets
+huggingface_hub
