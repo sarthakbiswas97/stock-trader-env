@@ -1,0 +1,12 @@
+{
+  "description": "GRPO prompts collected from neural env using SFT v3 model",
+  "episodes": 50,
+  "total_prompts": 1000,
+  "mean_score": 0.395,
+  "good_episodes_above_0.5": 18,
+  "good_episode_rate": 0.36,
+  "prompts_per_episode": 20,
+  "model": "sarthakbiswas/stock-trader-sft-v3-model",
+  "simulator_mode": "neural",
+  "hf_location": "sarthakbiswas/stock-trader-market-data/grpo_neural_prompts.jsonl"
+}

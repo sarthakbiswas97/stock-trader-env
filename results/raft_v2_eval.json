@@ -1,0 +1,11 @@
+{
+  "description": "RAFT trained from SFT v3 checkpoint (correct approach)",
+  "replay": {"score": 0.360, "std": 0.120, "return": 0.00, "sharpe": 0.40, "episodes": 5, "scores": [0.3, 0.6, 0.3, 0.3, 0.299]},
+  "neural": {"score": 0.399, "std": 0.165, "return": 0.00, "sharpe": 0.01, "episodes": 5, "scores": [0.6, 0.268, 0.238, 0.6, 0.29]},
+  "base_model": "sarthakbiswas/stock-trader-sft-v3-model",
+  "training_data": "640 RAFT winners from neural env",
+  "lr": "2e-6",
+  "epochs": 1,
+  "steps": 18,
+  "train_loss": 2.195
+}

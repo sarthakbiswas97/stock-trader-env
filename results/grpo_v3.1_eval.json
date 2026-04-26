@@ -1,0 +1,20 @@
+{
+  "description": "GRPO v3.1 trained on improved env (drawdown pressure, position age, streak penalty)",
+  "model": "sarthakbiswas/stock-trader-grpo-v3.1-model",
+  "single_stock_replay": {"score": 0.418, "std": 0.149, "return": 0.01, "sharpe": 0.66, "scores": [0.6, 0.6, 0.3, 0.3, 0.289]},
+  "single_stock_neural": {"score": 0.310, "std": 0.162, "return": -0.01, "sharpe": -0.50, "scores": [0.285, 0.3, 0.1, 0.6, 0.267]},
+  "single_stock_costs_replay": {"score": 0.407, "std": 0.158, "return": 0.00, "sharpe": 0.10, "scores": [0.6, 0.3, 0.287, 0.249, 0.6]},
+  "multi_stock_3_replay": {"score": 0.441, "std": 0.188, "return": -0.01, "sharpe": -0.52, "scores": [0.803, 0.438, 0.357, 0.295, 0.309]},
+  "before_baseline": {
+    "single_stock_replay": 0.331,
+    "single_stock_neural": 0.480,
+    "single_stock_costs_replay": 0.353,
+    "multi_stock_3_replay": 0.659
+  },
+  "improvement_over_before": {
+    "single_stock_replay": "+0.087",
+    "single_stock_costs_replay": "+0.054",
+    "single_stock_neural": "-0.170",
+    "multi_stock_3_replay": "-0.218"
+  }
+}
