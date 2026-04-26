@@ -554,7 +554,7 @@ def train(args: argparse.Namespace) -> None:
         max_steps=args.max_steps,
         logging_steps=5,
         save_strategy="steps",
-        save_steps=200,
+        save_steps=args.save_steps,
         bf16=True,
         seed=42,
         report_to="mlflow",
@@ -676,6 +676,7 @@ def main() -> None:
     parser.add_argument("--max-completion-length", type=int, default=DEFAULTS["max_completion_length"])
     parser.add_argument("--num-generations", type=int, default=DEFAULTS["num_generations"])
     parser.add_argument("--max-steps", type=int, default=DEFAULTS["max_steps"])
+    parser.add_argument("--save-steps", type=int, default=200, help="Save checkpoint every N steps")
     parser.add_argument("--batch-size", type=int, default=DEFAULTS["batch_size"])
     parser.add_argument("--grad-accum", type=int, default=DEFAULTS["grad_accum"])
     parser.add_argument("--lr", type=float, default=DEFAULTS["lr"])
