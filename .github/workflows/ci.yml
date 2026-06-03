@@ -56,37 +56,33 @@ jobs:
 
       - name: Download market data from HF Hub
         run: |
-          for i in 1 2 3; do
-            python -c "
-            from datasets import load_dataset
-            from pathlib import Path
-            import pandas as pd
+          python -c "
+          from datasets import load_dataset
+          from pathlib import Path
+          import pandas as pd
 
-            ds = load_dataset('sarthakbiswas/stock-trader-market-data')
+          ds = load_dataset('sarthakbiswas/stock-trader-market-data')
 
-            ohlcv_dir = Path('data/ohlcv')
-            ohlcv_dir.mkdir(parents=True, exist_ok=True)
-            ohlcv_df = ds['ohlcv'].to_pandas()
-            for symbol, group in ohlcv_df.groupby('symbol'):
-                group = group.drop(columns=['symbol', 'data_type'])
-                group.to_csv(ohlcv_dir / f'{symbol}_daily.csv', index=False)
+          ohlcv_dir = Path('data/ohlcv')
+          ohlcv_dir.mkdir(parents=True, exist_ok=True)
+          ohlcv_df = ds['ohlcv'].to_pandas()
+          for symbol, group in ohlcv_df.groupby('symbol'):
+              group = group.drop(columns=['symbol', 'data_type'])
+              group.to_csv(ohlcv_dir / f'{symbol}_daily.csv', index=False)
 
-            macro_dir = Path('data/macro')
-            macro_dir.mkdir(parents=True, exist_ok=True)
-            macro_df = ds['macro'].to_pandas()
-            for name, group in macro_df.groupby('symbol'):
-                group = group.drop(columns=['symbol', 'data_type'])
-                group.to_csv(macro_dir / f'{name}_daily.csv', index=False)
+          macro_dir = Path('data/macro')
+          macro_dir.mkdir(parents=True, exist_ok=True)
+          macro_df = ds['macro'].to_pandas()
+          for name, group in macro_df.groupby('symbol'):
+              group = group.drop(columns=['symbol', 'data_type'])
+              group.to_csv(macro_dir / f'{name}_daily.csv', index=False)
 
-            print(f'Downloaded {len(ohlcv_df.symbol.unique())} stocks + {len(macro_df.symbol.unique())} macro instruments')
-            " && exit 0
-            echo "HF download failed (attempt $i/3), retrying in 30s..."
-            sleep 30
-          done
-          echo "HF download failed after 3 attempts"
-          exit 1
+          print(f'Downloaded {len(ohlcv_df.symbol.unique())} stocks + {len(macro_df.symbol.unique())} macro instruments')
+          "
 
       - name: Run tests
+        env:
+          MLFLOW_ALLOW_FILE_STORE: true
         run: >
           PYTHONPATH=. pytest
           --cov=server --cov=models --cov=world_model
