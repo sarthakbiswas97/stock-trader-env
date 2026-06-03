@@ -31,3 +31,6 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 include = ["server*", "models*", "training*", "baselines*"]
+
+[tool.ruff]
+exclude = ["*.ipynb"]
